@@ -131,31 +131,40 @@ function App() {
       const serverOk = await apiClient.checkHealth();
       setIsServerOnline(serverOk);
 
-      let loadedUsers = DEFAULT_USERS;
+      let localUsers: UserProfile[] = DEFAULT_USERS;
       try {
         const saved = localStorage.getItem('users_list');
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) loadedUsers = parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) localUsers = parsed;
         }
       } catch (e) {
         console.error(e);
       }
 
+      let mergedUsers = [...localUsers];
       if (serverOk) {
         const remoteUsers = await apiClient.getUsers();
         if (remoteUsers.length > 0) {
-          loadedUsers = remoteUsers;
-          setUsers(remoteUsers);
-          localStorage.setItem('users_list', JSON.stringify(remoteUsers));
+          const localMap = new Map(localUsers.map((u) => [u.id, u]));
+          remoteUsers.forEach((ru) => {
+            if (!localMap.has(ru.id)) {
+              localMap.set(ru.id, ru);
+            } else {
+              // Update metadata from remote if available
+              localMap.set(ru.id, { ...localMap.get(ru.id)!, ...ru });
+            }
+          });
+          mergedUsers = Array.from(localMap.values());
         }
-      } else {
-        setUsers(loadedUsers);
       }
+
+      setUsers(mergedUsers);
+      localStorage.setItem('users_list', JSON.stringify(mergedUsers));
 
       // Check saved active user
       const savedUserId = localStorage.getItem('active_user_id');
-      const active = loadedUsers.find((u) => u.id === savedUserId) || loadedUsers[0];
+      const active = mergedUsers.find((u) => u.id === savedUserId) || mergedUsers[0];
       setCurrentUser(active);
       setCurrency(active.currency || 'USD');
 
@@ -192,39 +201,62 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load data for specific user
+  // Load data for specific user with resilient offline-first merging
   const loadUserData = async (userId: string, online = isServerOnline) => {
     isSyncingRef.current = true;
-    let payload: UserDataPayload | null = null;
+    let localPayload: UserDataPayload | null = null;
 
-    // 1. First check local storage cache
+    // 1. Read local storage cache first
     try {
       const raw = localStorage.getItem(`user_data_${userId}`);
       if (raw) {
-        payload = JSON.parse(raw);
+        localPayload = JSON.parse(raw);
       }
     } catch (e) {
       console.error('Failed reading user local cache:', e);
     }
 
+    let finalPayload: UserDataPayload | null = localPayload;
+
     // 2. Fetch from server if online
     if (online) {
       const remotePayload = await apiClient.fetchUserData(userId);
       if (remotePayload) {
-        payload = remotePayload;
-        localStorage.setItem(`user_data_${userId}`, JSON.stringify(remotePayload));
+        const hasRemoteData =
+          (remotePayload.transactions && remotePayload.transactions.length > 0) ||
+          (remotePayload.billGroups && remotePayload.billGroups.length > 0) ||
+          (remotePayload.budgets && remotePayload.budgets.length > 0) ||
+          (remotePayload.accounts && remotePayload.accounts.length > 0);
+
+        const hasLocalData =
+          localPayload &&
+          ((localPayload.transactions && localPayload.transactions.length > 0) ||
+           (localPayload.billGroups && localPayload.billGroups.length > 0) ||
+           (localPayload.budgets && localPayload.budgets.length > 0) ||
+           (localPayload.accounts && localPayload.accounts.length > 0));
+
+        if (hasRemoteData) {
+          finalPayload = remotePayload;
+        } else if (hasLocalData && localPayload) {
+          // Remote server is fresh/ephemeral, but browser has local data: preserve and sync to server!
+          finalPayload = localPayload;
+          apiClient.syncUserData(userId, localPayload);
+        } else {
+          finalPayload = remotePayload || localPayload;
+        }
       }
     }
 
-    if (payload) {
-      setTransactions(payload.transactions || []);
-      setBudgets(payload.budgets || []);
-      setBillGroups(payload.billGroups || []);
-      setAccounts(payload.accounts || []);
-      setGoals(payload.goals || []);
-      setSubscriptions(payload.subscriptions || []);
+    if (finalPayload) {
+      setTransactions(finalPayload.transactions || []);
+      setBudgets(finalPayload.budgets || []);
+      setBillGroups(finalPayload.billGroups || []);
+      setAccounts(finalPayload.accounts || []);
+      setGoals(finalPayload.goals || []);
+      setSubscriptions(finalPayload.subscriptions || []);
+      localStorage.setItem(`user_data_${userId}`, JSON.stringify(finalPayload));
     } else {
-      // Default initial data for default user or fresh user
+      // Default initial data for fresh user
       const data = initStorage();
       setTransactions(data.transactions);
       setBudgets(data.budgets);
@@ -232,11 +264,15 @@ function App() {
       setAccounts(data.accounts);
       setGoals(data.goals);
       setSubscriptions(data.subscriptions);
+      localStorage.setItem(`user_data_${userId}`, JSON.stringify(data));
+      if (online) {
+        apiClient.syncUserData(userId, data);
+      }
     }
 
     setTimeout(() => {
       isSyncingRef.current = false;
-    }, 200);
+    }, 250);
   };
 
   // Sync state to local storage and remote backend whenever changed

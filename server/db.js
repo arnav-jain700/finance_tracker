@@ -14,6 +14,17 @@ if (!fs.existsSync(DATA_DIR)) {
 
 export const INITIAL_USERS = [
   {
+    id: 'user-1787080211668',
+    name: 'Arnav Jain',
+    email: 'arnav4334@gmail.com',
+    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=Arnav%20Jain',
+    currency: 'INR',
+    role: 'Founder & Portfolio Lead',
+    color: '#6366f1',
+    pin: '9541',
+    createdAt: '2026-08-18',
+  },
+  {
     id: 'user-1',
     name: 'Alex Morgan',
     email: 'alex@apexfinance.io',
