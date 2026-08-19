@@ -1,5 +1,8 @@
 import express from 'express';
 import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   initDb,
   getUsers,
@@ -12,6 +15,10 @@ import {
   saveUserData,
   INITIAL_USERS,
 } from './db.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DIST_PATH = path.join(__dirname, '../dist');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -196,6 +203,15 @@ app.post('/api/users/:userId/data', (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to save user data' });
   }
 });
+
+// Serve production static frontend SPA if built
+if (fs.existsSync(DIST_PATH)) {
+  app.use(express.static(DIST_PATH));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(DIST_PATH, 'index.html'));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`⚡ ApexFinance Backend running on http://localhost:${PORT}`);
