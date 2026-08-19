@@ -206,10 +206,27 @@ app.post('/api/users/:userId/data', (req, res) => {
 
 // Serve production static frontend SPA if built
 if (fs.existsSync(DIST_PATH)) {
+  console.log(`📁 Static assets loaded from: ${DIST_PATH}`);
   app.use(express.static(DIST_PATH));
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api')) return next();
+  app.get('/', (req, res) => {
     res.sendFile(path.join(DIST_PATH, 'index.html'));
+  });
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      return res.sendFile(path.join(DIST_PATH, 'index.html'));
+    }
+    next();
+  });
+} else {
+  console.warn(`⚠️ Warning: DIST_PATH does not exist: ${DIST_PATH}`);
+  app.get('/', (req, res) => {
+    res.status(200).send(`
+      <div style="font-family: sans-serif; max-width: 600px; margin: 60px auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; text-align: center;">
+        <h2>⚡ ApexFinance Backend API Online</h2>
+        <p style="color: #64748b;">The Express API is running, but the frontend static build was not found.</p>
+        <p style="background: #f1f5f9; padding: 12px; border-radius: 8px; font-family: monospace;">Build Command in Render should be: <strong>npm install && npm run build</strong></p>
+      </div>
+    `);
   });
 }
 
