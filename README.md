@@ -1,4 +1,4 @@
-﻿# 🚀 ApexFinance Pro — Intelligent Wealth & Group Expense Management Suite
+# 🚀 ApexFinance Pro — Intelligent Wealth & Group Expense Management Suite
 
 [![React](https://img.shields.io/badge/React-19.1.0-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -82,12 +82,15 @@ npm install
 ```
 
 ### 3. Start Development Server (Full-Stack)
-Run both the backend API server (`localhost:5000`) and the Vite client (`localhost:5174`) concurrently with a single command:
-```bash
-npm run dev
-```
+### 3. Start Application (One-Command Full-Stack)
+Run both the backend Express API server (`localhost:5000`) and the Vite web client (`localhost:5174`) concurrently with auto-dependency checking and browser launch:
 
-Open your browser and navigate to **`http://localhost:5174/`** (or the port displayed in your terminal).
+```bash
+npm start
+```
+*(or `npm run dev` / double-click `start.bat` on Windows)*
+
+The browser will open automatically at **`http://localhost:5174/`**.
 
 ---
 
@@ -95,7 +98,9 @@ Open your browser and navigate to **`http://localhost:5174/`** (or the port disp
 
 | Command | Description |
 | :--- | :--- |
-| `npm run dev` | Starts both the Node.js backend server and Vite frontend concurrently |
+| `npm start` | **All-in-One Runner**: Checks dependencies, launches Express API & Vite client, and opens browser |
+| `npm run dev` | Alias for `npm start` |
+| `start.bat` | Windows 1-click launcher |
 | `npm run server` | Starts only the Express backend server on `http://localhost:5000` |
 | `npm run client` | Starts only the Vite frontend dev server |
 | `npm run build` | Compiles TypeScript and builds production bundles with Vite |
