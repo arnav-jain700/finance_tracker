@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node run.js",
-    "dev": "node run.js",
+    "start": "concurrently --kill-others -n \"SERVER,CLIENT\" -c \"cyan.bold,magenta.bold\" \"node server/index.js\" \"vite --open\"",
+    "dev": "concurrently --kill-others -n \"SERVER,CLIENT\" -c \"cyan.bold,magenta.bold\" \"node server/index.js\" \"vite --open\"",
+    "launch": "node run.js",
     "server": "node server/index.js",
     "client": "vite",
     "build": "tsc -b && vite build",
