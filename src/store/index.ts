@@ -714,7 +714,16 @@ export const SAMPLE_BILL_GROUPS: BillGroup[] = [
   },
 ];
 
-export const initStorage = () => {
+export interface StorageState {
+  transactions: Transaction[];
+  budgets: Budget[];
+  billGroups: BillGroup[];
+  accounts: Account[];
+  goals: Goal[];
+  subscriptions: Subscription[];
+}
+
+export const initStorage = (): StorageState => {
   let transactions: Transaction[] = [];
   let budgets: Budget[] = [];
   let billGroups: BillGroup[] = [];
@@ -730,28 +739,14 @@ export const initStorage = () => {
     const rawGoals = localStorage.getItem('goals');
     const rawSubs = localStorage.getItem('subscriptions');
 
-    transactions = rawTx ? JSON.parse(rawTx) : SAMPLE_TRANSACTIONS;
-    budgets = rawBudgets ? JSON.parse(rawBudgets) : SAMPLE_BUDGETS;
-    billGroups = rawGroups ? JSON.parse(rawGroups) : SAMPLE_BILL_GROUPS;
-    accounts = rawAccounts ? JSON.parse(rawAccounts) : SAMPLE_ACCOUNTS;
-    goals = rawGoals ? JSON.parse(rawGoals) : SAMPLE_GOALS;
-    subscriptions = rawSubs ? JSON.parse(rawSubs) : SAMPLE_SUBSCRIPTIONS;
-
-    // Seed defaults if missing
-    if (!rawTx) localStorage.setItem('transactions', JSON.stringify(SAMPLE_TRANSACTIONS));
-    if (!rawBudgets) localStorage.setItem('budgets', JSON.stringify(SAMPLE_BUDGETS));
-    if (!rawGroups) localStorage.setItem('billGroups', JSON.stringify(SAMPLE_BILL_GROUPS));
-    if (!rawAccounts) localStorage.setItem('accounts', JSON.stringify(SAMPLE_ACCOUNTS));
-    if (!rawGoals) localStorage.setItem('goals', JSON.stringify(SAMPLE_GOALS));
-    if (!rawSubs) localStorage.setItem('subscriptions', JSON.stringify(SAMPLE_SUBSCRIPTIONS));
+    transactions = rawTx ? JSON.parse(rawTx) : [];
+    budgets = rawBudgets ? JSON.parse(rawBudgets) : [];
+    billGroups = rawGroups ? JSON.parse(rawGroups) : [];
+    accounts = rawAccounts ? JSON.parse(rawAccounts) : [];
+    goals = rawGoals ? JSON.parse(rawGoals) : [];
+    subscriptions = rawSubs ? JSON.parse(rawSubs) : [];
   } catch (e) {
     console.error('Failed to load local storage:', e);
-    transactions = SAMPLE_TRANSACTIONS;
-    budgets = SAMPLE_BUDGETS;
-    billGroups = SAMPLE_BILL_GROUPS;
-    accounts = SAMPLE_ACCOUNTS;
-    goals = SAMPLE_GOALS;
-    subscriptions = SAMPLE_SUBSCRIPTIONS;
   }
 
   return { transactions, budgets, billGroups, accounts, goals, subscriptions };

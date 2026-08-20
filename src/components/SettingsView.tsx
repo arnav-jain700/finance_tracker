@@ -19,21 +19,18 @@ import {
 import { UserProfile } from '../api/client';
 import {
   CURRENCY_MAP,
-  SAMPLE_TRANSACTIONS,
-  SAMPLE_BUDGETS,
-  SAMPLE_BILL_GROUPS,
   formatCurrency,
 } from '../store';
 
 interface SettingsViewProps {
   currency: string;
   theme: 'light' | 'dark' | 'system';
-  currentUser?: UserProfile;
+  currentUser?: UserProfile | null;
   onOpenManageProfiles?: () => void;
   onCurrencyChange: (c: string) => void;
   onThemeChange: (t: 'light' | 'dark' | 'system') => void;
   onResetData: () => void;
-  onLoadDemoData: () => void;
+  onLoadDemoData?: () => void;
 }
 
 export function SettingsView({
@@ -295,25 +292,17 @@ export function SettingsView({
             </label>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <button
-              onClick={onLoadDemoData}
-              className="flex-1 py-3 px-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/50 hover:bg-indigo-100 text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
-            >
-              <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <span>Load Realistic Demo Dataset</span>
-            </button>
-
+          <div className="pt-2">
             <button
               onClick={() => {
-                if (window.confirm('Clear all stored transactions, budgets, and bill groups?')) {
+                if (window.confirm('Clear all stored transactions, budgets, and bill groups for this profile?')) {
                   onResetData();
                 }
               }}
-              className="py-3 px-4 rounded-2xl border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-bold flex items-center justify-center gap-2 transition-all"
+              className="w-full py-3 px-4 rounded-2xl border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-bold flex items-center justify-center gap-2 transition-all"
             >
               <Trash2 className="w-4 h-4" />
-              <span>Clear All Data</span>
+              <span>Clear Current Profile Data</span>
             </button>
           </div>
         </div>

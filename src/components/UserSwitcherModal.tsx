@@ -24,7 +24,7 @@ interface UserSwitcherModalProps {
   isOpen: boolean;
   onClose: () => void;
   users: UserProfile[];
-  currentUser: UserProfile;
+  currentUser?: UserProfile | null;
   onSelectUser: (user: UserProfile) => void;
   onCreateUser: (data: {
     name: string;
@@ -223,7 +223,7 @@ export function UserSwitcherModal({
           <div className="space-y-4">
             <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
               {users.map((u) => {
-                const isSelected = u.id === currentUser.id;
+                const isSelected = currentUser ? u.id === currentUser.id : false;
                 return (
                   <div
                     key={u.id}

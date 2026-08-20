@@ -5,7 +5,7 @@ import { Lock, Unlock, KeyRound, ArrowRight, ShieldCheck, RefreshCw } from 'luci
 
 interface LockScreenProps {
   isLocked: boolean;
-  currentUser: UserProfile;
+  currentUser?: UserProfile | null;
   onUnlock: () => void;
   onOpenUserSwitcher: () => void;
 }
@@ -20,7 +20,7 @@ export function LockScreen({
   const [errorShake, setErrorShake] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const targetPin = (currentUser as any).pin || '1234';
+  const targetPin = currentUser?.pin || '1234';
 
   useEffect(() => {
     if (isLocked) {
@@ -30,7 +30,7 @@ export function LockScreen({
     }
   }, [isLocked]);
 
-  if (!isLocked) return null;
+  if (!isLocked || !currentUser) return null;
 
   const handleKeyPress = (num: string) => {
     if (pin.length < 4) {

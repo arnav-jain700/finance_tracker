@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Layout, LockScreen } from './components';
+import { OnboardingWelcome } from './components/OnboardingWelcome';
 import {
   initStorage,
   Transaction,
@@ -11,12 +12,6 @@ import {
   Subscription,
   DEFAULT_EXCHANGE_RATES,
   setExchangeRates,
-  SAMPLE_TRANSACTIONS,
-  SAMPLE_BUDGETS,
-  SAMPLE_BILL_GROUPS,
-  SAMPLE_ACCOUNTS,
-  SAMPLE_GOALS,
-  SAMPLE_SUBSCRIPTIONS,
 } from './store';
 import { apiClient, UserProfile, UserDataPayload } from './api/client';
 
@@ -34,45 +29,7 @@ type ViewMode =
   | 'reports'
   | 'settings';
 
-const DEFAULT_USERS: UserProfile[] = [
-  {
-    id: 'user-1787080211668',
-    name: 'Arnav Jain',
-    email: 'arnav4334@gmail.com',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=Arnav%20Jain',
-    currency: 'INR',
-    role: 'Founder & Portfolio Lead',
-    color: '#6366f1',
-    pin: '9541',
-  },
-  {
-    id: 'user-1',
-    name: 'Alex Morgan',
-    email: 'alex@apexfinance.io',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-    currency: 'USD',
-    role: 'Primary Owner',
-    color: '#6366f1',
-  },
-  {
-    id: 'user-2',
-    name: 'Sarah Chen',
-    email: 'sarah@apexfinance.io',
-    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=120&auto=format&fit=crop&q=80',
-    currency: 'USD',
-    role: 'Partner',
-    color: '#ec4899',
-  },
-  {
-    id: 'user-3',
-    name: 'Marcus Vance',
-    email: 'marcus@apexfinance.io',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
-    currency: 'EUR',
-    role: 'Collaborator',
-    color: '#10b981',
-  },
-];
+const DEFAULT_USERS: UserProfile[] = [];
 
 function App() {
   const [view, setView] = useState<ViewMode>('dashboard');
@@ -88,7 +45,7 @@ function App() {
     }
     return DEFAULT_USERS;
   });
-  const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
       const savedUserId = localStorage.getItem('active_user_id');
       const savedUsers = localStorage.getItem('users_list');
@@ -99,7 +56,7 @@ function App() {
     } catch (e) {
       console.error(e);
     }
-    return DEFAULT_USERS[0];
+    return null;
   });
   const [isServerOnline, setIsServerOnline] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
@@ -131,7 +88,7 @@ function App() {
       const serverOk = await apiClient.checkHealth();
       setIsServerOnline(serverOk);
 
-      let localUsers: UserProfile[] = DEFAULT_USERS;
+      let localUsers: UserProfile[] = [];
       try {
         const saved = localStorage.getItem('users_list');
         if (saved) {
@@ -164,12 +121,12 @@ function App() {
 
       // Check saved active user
       const savedUserId = localStorage.getItem('active_user_id');
-      const active = mergedUsers.find((u) => u.id === savedUserId) || mergedUsers[0];
+      const active = mergedUsers.find((u) => u.id === savedUserId) || mergedUsers[0] || null;
       setCurrentUser(active);
-      setCurrency(active.currency || 'USD');
-
-      // Load user data
-      await loadUserData(active.id, serverOk);
+      if (active) {
+        setCurrency(active.currency || 'USD');
+        await loadUserData(active.id, serverOk);
+      }
 
       // Load global theme
       const savedSettings = localStorage.getItem('settings');
@@ -368,44 +325,30 @@ function App() {
 
       const initialPayload: UserDataPayload = {
         transactions: [],
-        budgets: [
-          { id: 'b-1', category: 'Housing', limit: 2000 },
-          { id: 'b-2', category: 'Food & Dining', limit: 600 },
-          { id: 'b-3', category: 'Transport', limit: 250 },
-        ],
+        budgets: [],
         billGroups: [],
         accounts: [
           {
             id: `acc-${Date.now()}-1`,
-            name: `${data.name}'s Primary Checking`,
+            name: `${data.name}'s Primary Account`,
             type: 'checking',
-            balance: Number(data.initialBalance) || 2500.0,
+            balance: Number(data.initialBalance) || 0,
             currency: data.currency,
-            institution: 'Apex Digital Bank',
+            institution: 'Main Wallet',
             accountNumber: '•••• ' + Math.floor(1000 + Math.random() * 9000),
             color: 'from-blue-600 to-indigo-700',
             isDefault: true,
           },
         ],
-        goals: [
-          {
-            id: `goal-${Date.now()}-1`,
-            name: 'Starter Emergency Fund',
-            targetAmount: 5000,
-            currentAmount: 1500,
-            targetDate: new Date(Date.now() + 180 * 86400000).toISOString().split('T')[0],
-            category: 'Safety',
-            color: '#10b981',
-            notes: 'Initial emergency fund cushion',
-          },
-        ],
+        goals: [],
         subscriptions: [],
       };
       localStorage.setItem(`user_data_${created.id}`, JSON.stringify(initialPayload));
     }
 
-    const updatedUsers = [...users, created];
+    const updatedUsers = [...users.filter((u) => u.id !== created.id), created];
     setUsers(updatedUsers);
+    localStorage.setItem('users_list', JSON.stringify(updatedUsers));
     await handleSelectUser(created);
   };
 
@@ -421,7 +364,8 @@ function App() {
       return u;
     });
     setUsers(nextUsers);
-    if (currentUser.id === userId) {
+    localStorage.setItem('users_list', JSON.stringify(nextUsers));
+    if (currentUser?.id === userId) {
       const active = nextUsers.find((u) => u.id === userId) || currentUser;
       setCurrentUser(active);
       if (data.currency) setCurrency(data.currency);
@@ -429,15 +373,20 @@ function App() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (users.length <= 1) return;
     if (isServerOnline) {
       await apiClient.deleteUser(userId);
     }
     localStorage.removeItem(`user_data_${userId}`);
     const nextUsers = users.filter((u) => u.id !== userId);
     setUsers(nextUsers);
-    if (currentUser.id === userId) {
-      await handleSelectUser(nextUsers[0]);
+    localStorage.setItem('users_list', JSON.stringify(nextUsers));
+    if (currentUser?.id === userId) {
+      if (nextUsers.length > 0) {
+        await handleSelectUser(nextUsers[0]);
+      } else {
+        setCurrentUser(null);
+        localStorage.removeItem('active_user_id');
+      }
     }
   };
 
@@ -445,18 +394,18 @@ function App() {
     if (isServerOnline) {
       await apiClient.resetUserData(userId);
     }
-    if (currentUser.id === userId) {
+    if (currentUser?.id === userId) {
       setTransactions([]);
       setBudgets([]);
       setBillGroups([]);
       setAccounts([
         {
           id: `acc-${Date.now()}-1`,
-          name: `${currentUser.name}'s Primary Checking`,
+          name: `${currentUser.name}'s Primary Account`,
           type: 'checking',
           balance: 0,
           currency: currentUser.currency || 'USD',
-          institution: 'Apex Digital Bank',
+          institution: 'Main Wallet',
           accountNumber: '•••• ' + Math.floor(1000 + Math.random() * 9000),
           color: 'from-blue-600 to-indigo-700',
           isDefault: true,
@@ -668,72 +617,84 @@ function App() {
   };
 
   const loadDemoData = () => {
-    setTransactions(SAMPLE_TRANSACTIONS);
-    setBudgets(SAMPLE_BUDGETS);
-    setBillGroups(SAMPLE_BILL_GROUPS);
-    setAccounts(SAMPLE_ACCOUNTS);
-    setGoals(SAMPLE_GOALS);
-    setSubscriptions(SAMPLE_SUBSCRIPTIONS);
+    resetData();
   };
+
+  if (!initialized) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!currentUser || users.length === 0) {
+    return (
+      <OnboardingWelcome
+        onCreateUser={handleCreateUser}
+        isServerOnline={isServerOnline}
+      />
+    );
+  }
 
   return (
     <>
       <Layout
-      currentView={view}
-      onViewChange={setView}
-      transactions={transactions}
-      budgets={budgets}
-      billGroups={billGroups}
-      accounts={accounts}
-      goals={goals}
-      subscriptions={subscriptions}
-      currency={currency}
-      theme={theme}
-      users={users}
-      currentUser={currentUser}
-      isServerOnline={isServerOnline}
-      onSelectUser={handleSelectUser}
-      onCreateUser={handleCreateUser}
-      onUpdateUser={handleUpdateUser}
-      onDeleteUser={handleDeleteUser}
-      onResetUserData={handleResetUserData}
-      onCurrencyChange={setCurrency}
-      onThemeChange={setTheme}
-      onAddTransaction={addTransaction}
-      onDeleteTransaction={deleteTransaction}
-      onUpdateTransaction={updateTransaction}
-      onAddBudget={addBudget}
-      onDeleteBudget={deleteBudget}
-      onUpdateBudget={updateBudget}
-      onAddBillGroup={addBillGroup}
-      onDeleteBillGroup={deleteBillGroup}
-      onAddBillExpense={addBillExpense}
-      onUpdateBillExpense={updateBillExpense}
-      onDeleteBillExpense={deleteBillExpense}
-      onAddAccount={addAccount}
-      onUpdateAccount={updateAccount}
-      onDeleteAccount={deleteAccount}
-      onTransfer={transferFunds}
-      onAddGoal={addGoal}
-      onUpdateGoal={updateGoal}
-      onDeleteGoal={deleteGoal}
-      onGoalDepositWithdraw={depositWithdrawGoal}
-      onAddSubscription={addSubscription}
-      onUpdateSubscription={updateSubscription}
-      onDeleteSubscription={deleteSubscription}
-      onSubscriptionPayment={logSubscriptionPayment}
-      onLockWorkspace={() => setIsLocked(true)}
-      onResetData={resetData}
-      onLoadDemoData={loadDemoData}
-    />
-    <LockScreen
-      isLocked={isLocked}
-      currentUser={currentUser}
-      onUnlock={() => setIsLocked(false)}
-      onOpenUserSwitcher={() => {
-        setIsLocked(false);
-      }}
-    />
+        currentView={view}
+        onViewChange={setView}
+        transactions={transactions}
+        budgets={budgets}
+        billGroups={billGroups}
+        accounts={accounts}
+        goals={goals}
+        subscriptions={subscriptions}
+        currency={currency}
+        theme={theme}
+        users={users}
+        currentUser={currentUser}
+        isServerOnline={isServerOnline}
+        onSelectUser={handleSelectUser}
+        onCreateUser={handleCreateUser}
+        onUpdateUser={handleUpdateUser}
+        onDeleteUser={handleDeleteUser}
+        onResetUserData={handleResetUserData}
+        onCurrencyChange={setCurrency}
+        onThemeChange={setTheme}
+        onAddTransaction={addTransaction}
+        onDeleteTransaction={deleteTransaction}
+        onUpdateTransaction={updateTransaction}
+        onAddBudget={addBudget}
+        onDeleteBudget={deleteBudget}
+        onUpdateBudget={updateBudget}
+        onAddBillGroup={addBillGroup}
+        onDeleteBillGroup={deleteBillGroup}
+        onAddBillExpense={addBillExpense}
+        onUpdateBillExpense={updateBillExpense}
+        onDeleteBillExpense={deleteBillExpense}
+        onAddAccount={addAccount}
+        onUpdateAccount={updateAccount}
+        onDeleteAccount={deleteAccount}
+        onTransfer={transferFunds}
+        onAddGoal={addGoal}
+        onUpdateGoal={updateGoal}
+        onDeleteGoal={deleteGoal}
+        onGoalDepositWithdraw={depositWithdrawGoal}
+        onAddSubscription={addSubscription}
+        onUpdateSubscription={updateSubscription}
+        onDeleteSubscription={deleteSubscription}
+        onSubscriptionPayment={logSubscriptionPayment}
+        onLockWorkspace={() => setIsLocked(true)}
+        onResetData={resetData}
+        onLoadDemoData={loadDemoData}
+      />
+      <LockScreen
+        isLocked={isLocked}
+        currentUser={currentUser}
+        onUnlock={() => setIsLocked(false)}
+        onOpenUserSwitcher={() => {
+          setIsLocked(false);
+        }}
+      />
     </>
   );
 }

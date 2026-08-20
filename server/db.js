@@ -12,52 +12,7 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-export const INITIAL_USERS = [
-  {
-    id: 'user-1787080211668',
-    name: 'Arnav Jain',
-    email: 'arnav4334@gmail.com',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=Arnav%20Jain',
-    currency: 'INR',
-    role: 'Founder & Portfolio Lead',
-    color: '#6366f1',
-    pin: '9541',
-    createdAt: '2026-08-18',
-  },
-  {
-    id: 'user-1',
-    name: 'Alex Morgan',
-    email: 'alex@apexfinance.io',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-    currency: 'USD',
-    role: 'Primary Owner',
-    color: '#6366f1',
-    pin: '1234',
-    createdAt: '2026-08-01',
-  },
-  {
-    id: 'user-2',
-    name: 'Sarah Chen',
-    email: 'sarah@apexfinance.io',
-    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=120&auto=format&fit=crop&q=80',
-    currency: 'USD',
-    role: 'Partner',
-    color: '#ec4899',
-    pin: '1234',
-    createdAt: '2026-08-05',
-  },
-  {
-    id: 'user-3',
-    name: 'Marcus Vance',
-    email: 'marcus@apexfinance.io',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
-    currency: 'EUR',
-    role: 'Collaborator',
-    color: '#10b981',
-    pin: '1234',
-    createdAt: '2026-08-10',
-  },
-];
+export const INITIAL_USERS = [];
 
 const getUserDataFilePath = (userId) => path.join(DATA_DIR, `userData_${userId}.json`);
 
@@ -91,50 +46,34 @@ export function createUser(userData) {
     email: userData.email?.trim() || `${userData.name.toLowerCase().replace(/\s+/g, '')}@apexfinance.io`,
     avatar: userData.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(userData.name)}`,
     currency: userData.currency || 'USD',
-    role: userData.role || 'Member',
+    role: userData.role || 'Personal',
     color: userData.color || '#6366f1',
-    pin: userData.pin || '1234',
+    pin: userData.pin || undefined,
     createdAt: new Date().toISOString().split('T')[0],
   };
 
   users.push(newUser);
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
 
-  // Initialize empty data file for new user
+  // Initialize clean data file for new user with zero sample transactions/budgets/goals
   const initialUserData = {
     transactions: [],
-    budgets: [
-      { id: 'b-1', category: 'Housing', limit: 2000 },
-      { id: 'b-2', category: 'Food & Dining', limit: 600 },
-      { id: 'b-3', category: 'Transport', limit: 250 },
-      { id: 'b-4', category: 'Entertainment', limit: 200 },
-    ],
+    budgets: [],
     billGroups: [],
     accounts: [
       {
         id: `acc-${Date.now()}-1`,
-        name: `${userData.name}'s Primary Checking`,
+        name: `${userData.name}'s Primary Account`,
         type: 'checking',
-        balance: Number(userData.initialBalance) || 2500.0,
+        balance: Number(userData.initialBalance) || 0,
         currency: userData.currency || 'USD',
-        institution: 'Apex Digital Bank',
+        institution: 'Main Wallet',
         accountNumber: '•••• ' + Math.floor(1000 + Math.random() * 9000),
         color: 'from-blue-600 to-indigo-700',
         isDefault: true,
       },
     ],
-    goals: [
-      {
-        id: `goal-${Date.now()}-1`,
-        name: 'Starter Emergency Cushion',
-        targetAmount: 5000,
-        currentAmount: 1200,
-        targetDate: new Date(Date.now() + 180 * 86400000).toISOString().split('T')[0],
-        category: 'Safety',
-        color: '#10b981',
-        notes: 'Initial emergency fund allocation',
-      },
-    ],
+    goals: [],
     subscriptions: [],
   };
 
