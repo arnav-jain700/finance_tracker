@@ -123,7 +123,7 @@ export function OnboardingWelcome({ onCreateUser, isServerOnline }: OnboardingWe
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g., Arnav Jain"
+                  placeholder="e.g., John Doe"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/70 border border-slate-700 text-white placeholder:text-slate-500 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
                 />
               </div>
