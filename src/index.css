@@ -5,18 +5,18 @@
 @theme {
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
-  --color-primary-50: #eef2ff;
-  --color-primary-100: #e0e7ff;
-  --color-primary-500: #6366f1;
-  --color-primary-600: #4f46e5;
-  --color-primary-700: #4338ca;
+  --color-primary-50: #f1f5f9;
+  --color-primary-100: #e2e8f0;
+  --color-primary-500: #4f46e5;
+  --color-primary-600: #4338ca;
+  --color-primary-700: #3730a3;
 }
 
 @layer base {
   :root {
-    --bg-page: #f8fafc;
+    --bg-page: #f4f6f8;
     --bg-card: #ffffff;
-    --text-main: #0f172a;
+    --text-main: #1e293b;
     --text-muted: #64748b;
     --border-card: #e2e8f0;
   }
@@ -46,8 +46,8 @@
 .glass-panel {
   background-color: #ffffff;
   border: 1px solid #e2e8f0;
-  color: #0f172a;
-  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+  color: #1e293b;
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.03), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
 }
 
 .dark .glass-panel, html.dark .glass-panel {
@@ -61,9 +61,9 @@
 
 .glass-panel-glow {
   background-color: #ffffff;
-  border: 1px solid #e0e7ff;
-  color: #0f172a;
-  box-shadow: 0 20px 35px -10px rgba(99, 102, 241, 0.12), 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+  color: #1e293b;
+  box-shadow: 0 6px 20px -4px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
 }
 
 .dark .glass-panel-glow, html.dark .glass-panel-glow {
@@ -82,7 +82,7 @@
 
 .hover-lift:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.09), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 10px 24px -6px rgba(15, 23, 42, 0.07), 0 4px 8px -4px rgba(15, 23, 42, 0.03);
   border-color: #cbd5e1;
 }
 
@@ -125,8 +125,8 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 400px;
-  background: radial-gradient(circle 800px at 50% -120px, rgba(99, 102, 241, 0.06), transparent 70%);
+  height: 300px;
+  background: radial-gradient(circle 800px at 50% -120px, rgba(99, 102, 241, 0.015), transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -135,12 +135,12 @@
   background: radial-gradient(circle 800px at 50% -100px, rgba(99, 102, 241, 0.15), transparent 70%);
 }
 
-/* Credit Card FinTech Gradient */
+/* Credit Card FinTech Gradient (Calm Executive Midnight/Navy) */
 .fintech-card-gradient {
-  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 70%, #6366f1 100%);
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
   position: relative;
   overflow: hidden;
-  box-shadow: 0 20px 30px -10px rgba(79, 70, 229, 0.3);
+  box-shadow: 0 16px 32px -8px rgba(15, 23, 42, 0.2);
 }
 
 .fintech-card-gradient::after {
@@ -150,6 +150,6 @@
   left: -50%;
   width: 200%;
   height: 200%;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.15) 0%, transparent 60%);
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.08) 0%, transparent 60%);
   pointer-events: none;
 }

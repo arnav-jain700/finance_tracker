@@ -150,10 +150,10 @@ export function Dashboard({
       {/* Hero Financial Banner & Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Virtual FinTech Card */}
-        <div className="lg:col-span-2 relative overflow-hidden rounded-3xl fintech-card-gradient p-6 sm:p-8 text-white shadow-2xl shadow-indigo-950/30 border border-indigo-400/20 flex flex-col justify-between min-h-[250px]">
+        <div className="lg:col-span-2 relative overflow-hidden rounded-3xl fintech-card-gradient p-6 sm:p-8 text-white shadow-xl shadow-slate-900/10 border border-slate-700/40 flex flex-col justify-between min-h-[250px]">
           {/* Card subtle pattern elements */}
-          <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-indigo-400/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-1/3 -mb-10 w-48 h-48 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-slate-400/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-1/3 -mb-10 w-48 h-48 bg-slate-500/10 rounded-full blur-2xl pointer-events-none" />
 
           {/* Top row */}
           <div className="flex items-center justify-between relative z-10">
@@ -162,7 +162,7 @@ export function Dashboard({
                 <Wallet className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-xs uppercase tracking-widest text-indigo-200 font-semibold">Apex Primary Vault</p>
+                <p className="text-xs uppercase tracking-widest text-slate-300 font-semibold">Apex Primary Vault</p>
                 <p className="text-xs text-indigo-300/80 font-mono">
                   {accounts[0]?.accountNumber || '•••• •••• •••• 8842'}
                 </p>
@@ -179,7 +179,7 @@ export function Dashboard({
 
           {/* Center Balance Display */}
           <div className="my-4 relative z-10">
-            <p className="text-sm font-medium text-indigo-200 mb-1">Total Available Net Worth</p>
+            <p className="text-sm font-medium text-slate-300 mb-1">Total Available Net Worth</p>
             <div className="flex items-baseline gap-3 flex-wrap">
               <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight font-heading">
                 {hideBalance ? '••••••••' : formatCurrency(totalNetWorth || balance, currency)}
@@ -197,15 +197,15 @@ export function Dashboard({
           <div className="flex items-center justify-between pt-4 border-t border-white/10 relative z-10 flex-wrap gap-3">
             <div className="flex items-center gap-6">
               <div>
-                <p className="text-xs text-indigo-300">Monthly Inflow</p>
-                <p className="text-sm sm:text-base font-bold text-emerald-300">
+                <p className="text-xs text-slate-400">Monthly Inflow</p>
+                <p className="text-sm sm:text-base font-bold text-emerald-400">
                   {hideBalance ? '••••' : `+${formatCurrency(totalIncome, currency)}`}
                 </p>
               </div>
               <div className="w-px h-8 bg-white/15" />
               <div>
-                <p className="text-xs text-indigo-300">Monthly Outflow</p>
-                <p className="text-sm sm:text-base font-bold text-rose-300">
+                <p className="text-xs text-slate-400">Monthly Outflow</p>
+                <p className="text-sm sm:text-base font-bold text-rose-400">
                   {hideBalance ? '••••' : `-${formatCurrency(totalExpenses, currency)}`}
                 </p>
               </div>
