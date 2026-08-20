@@ -12,7 +12,7 @@ import {
   Target,
   Users,
 } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subDays } from 'date-fns';
 import { CategoryBadge } from './CategoryIcon';
 
 interface ReportsViewProps {
@@ -31,7 +31,11 @@ export function ReportsView({
   goals,
   currency,
 }: ReportsViewProps) {
-  const [period, setPeriod] = useState<'current-month' | 'last-month' | 'all-time'>('current-month');
+  const [period, setPeriod] = useState<
+    'current-month' | 'last-month' | 'last-30' | 'this-year' | 'all-time' | 'custom'
+  >('current-month');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   const filteredTransactions = useMemo(() => {
     const now = new Date();
@@ -39,7 +43,7 @@ export function ReportsView({
       const start = startOfMonth(now);
       const end = endOfMonth(now);
       return transactions.filter((t) => {
-        const d = new Date(t.date);
+        const d = new Date(t.date + 'T00:00:00');
         return d >= start && d <= end;
       });
     } else if (period === 'last-month') {
@@ -47,12 +51,38 @@ export function ReportsView({
       const start = startOfMonth(lastMonthDate);
       const end = endOfMonth(lastMonthDate);
       return transactions.filter((t) => {
-        const d = new Date(t.date);
+        const d = new Date(t.date + 'T00:00:00');
         return d >= start && d <= end;
+      });
+    } else if (period === 'last-30') {
+      const start = subDays(now, 30);
+      return transactions.filter((t) => {
+        const d = new Date(t.date + 'T00:00:00');
+        return d >= start && d <= now;
+      });
+    } else if (period === 'this-year') {
+      const start = startOfYear(now);
+      const end = endOfYear(now);
+      return transactions.filter((t) => {
+        const d = new Date(t.date + 'T00:00:00');
+        return d >= start && d <= end;
+      });
+    } else if (period === 'custom') {
+      return transactions.filter((t) => {
+        const d = new Date(t.date + 'T00:00:00');
+        if (startDate) {
+          const s = new Date(startDate + 'T00:00:00');
+          if (d < s) return false;
+        }
+        if (endDate) {
+          const e = new Date(endDate + 'T23:59:59');
+          if (d > e) return false;
+        }
+        return true;
       });
     }
     return transactions;
-  }, [transactions, period]);
+  }, [transactions, period, startDate, endDate]);
 
   const totalIncome = filteredTransactions.filter((t) => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
   const totalExpenses = filteredTransactions.filter((t) => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
@@ -93,16 +123,40 @@ export function ReportsView({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <select
-            value={period}
-            onChange={(e) => setPeriod(e.target.value as any)}
-            className="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white"
-          >
-            <option value="current-month">Current Month Statement</option>
-            <option value="last-month">Previous Month Statement</option>
-            <option value="all-time">All-Time Cumulative</option>
-          </select>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative">
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value as any)}
+              className="pl-9 pr-8 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+            >
+              <option value="current-month">Current Month Statement</option>
+              <option value="last-month">Previous Month Statement</option>
+              <option value="last-30">Last 30 Days</option>
+              <option value="this-year">This Year (YTD)</option>
+              <option value="all-time">All-Time Cumulative</option>
+              <option value="custom">Custom Date Range...</option>
+            </select>
+          </div>
+
+          {period === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+              <span className="text-xs text-slate-400">to</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+            </div>
+          )}
 
           <button
             onClick={handlePrint}

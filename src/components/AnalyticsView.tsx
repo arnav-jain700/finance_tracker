@@ -38,20 +38,40 @@ interface AnalyticsViewProps {
 const PALETTE = ['#6366f1', '#f97316', '#0284c7', '#a855f7', '#06b6d4', '#f43f5e', '#ec4899', '#14b8a6', '#10b981', '#8b5cf6', '#64748b'];
 
 export function AnalyticsView({ transactions, currency }: AnalyticsViewProps) {
-  const [timeRange, setTimeRange] = useState<'3m' | '6m' | '12m'>('6m');
-
-  const monthsCount = timeRange === '3m' ? 3 : timeRange === '6m' ? 6 : 12;
+  const [timeRange, setTimeRange] = useState<'1m' | '3m' | '6m' | '12m' | 'ytd' | 'all'>('6m');
 
   const monthlyData = useMemo(() => {
-    const endDate = endOfMonth(new Date());
-    const startDate = startOfMonth(subMonths(new Date(), monthsCount - 1));
+    const now = new Date();
+    const endDate = endOfMonth(now);
+    let startDate = startOfMonth(subMonths(now, 5));
+
+    if (timeRange === '1m') {
+      startDate = startOfMonth(now);
+    } else if (timeRange === '3m') {
+      startDate = startOfMonth(subMonths(now, 2));
+    } else if (timeRange === '6m') {
+      startDate = startOfMonth(subMonths(now, 5));
+    } else if (timeRange === '12m') {
+      startDate = startOfMonth(subMonths(now, 11));
+    } else if (timeRange === 'ytd') {
+      startDate = new Date(now.getFullYear(), 0, 1);
+    } else if (timeRange === 'all') {
+      if (transactions.length > 0) {
+        const dates = transactions.map((t) => new Date(t.date).getTime());
+        const earliest = new Date(Math.min(...dates));
+        startDate = startOfMonth(earliest);
+      } else {
+        startDate = startOfMonth(subMonths(now, 11));
+      }
+    }
+
     const monthIntervals = eachMonthOfInterval({ start: startDate, end: endDate });
 
     return monthIntervals.map((monthStart) => {
       const monthEnd = endOfMonth(monthStart);
       const monthStr = format(monthStart, 'MMM yyyy');
       const monthTransactions = transactions.filter((t) => {
-        const txDate = new Date(t.date);
+        const txDate = new Date(t.date + 'T00:00:00');
         return txDate >= monthStart && txDate <= monthEnd;
       });
 
@@ -65,7 +85,7 @@ export function AnalyticsView({ transactions, currency }: AnalyticsViewProps) {
         net: income - expenses,
       };
     });
-  }, [transactions, monthsCount]);
+  }, [transactions, timeRange]);
 
   const categoryData = useMemo(() => {
     const expenseTransactions = transactions.filter((t) => t.type === 'expense');
@@ -86,6 +106,7 @@ export function AnalyticsView({ transactions, currency }: AnalyticsViewProps) {
       .sort((a, b) => b.amount - a.amount);
   }, [transactions]);
 
+  // Overall KPIs
   const totalIncome = transactions.filter((t) => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
   const totalExpenses = transactions.filter((t) => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
   const netSavings = totalIncome - totalExpenses;
@@ -104,30 +125,39 @@ export function AnalyticsView({ transactions, currency }: AnalyticsViewProps) {
 
   return (
     <div className="space-y-8 pb-8">
-      {/* Header Bar */}
+      {/* Header Bar with Time Range Picker */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl sm:text-3xl font-extrabold font-heading text-slate-900 dark:text-white">
-            Visual Analytics
+            Wealth & Expense Analytics
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Cash flow breakdowns, spending allocations, and wealth trajectory
+            Visual breakdown of cash flow trends, budget adherence, and categorical expenditures
           </p>
         </div>
 
-        {/* Time Range Pills */}
-        <div className="flex bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/60 self-start sm:self-auto">
-          {(['3m', '6m', '12m'] as const).map((range) => (
+        {/* Time Horizon Segmented Control */}
+        <div className="flex bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/60 self-start sm:self-auto flex-wrap">
+          {(
+            [
+              { id: '1m', label: '1M' },
+              { id: '3m', label: '3M' },
+              { id: '6m', label: '6M' },
+              { id: '12m', label: '12M' },
+              { id: 'ytd', label: 'YTD' },
+              { id: 'all', label: 'All' },
+            ] as const
+          ).map(({ id, label }) => (
             <button
-              key={range}
-              onClick={() => setTimeRange(range)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                timeRange === range
+              key={id}
+              onClick={() => setTimeRange(id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                timeRange === id
                   ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
-              {range === '3m' ? '3 Months' : range === '6m' ? '6 Months' : '12 Months'}
+              {label}
             </button>
           ))}
         </div>

@@ -25,6 +25,18 @@ import {
   FileSpreadsheet,
   SlidersHorizontal,
 } from 'lucide-react';
+import {
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  subMonths,
+  startOfYear,
+  endOfYear,
+  subDays,
+} from 'date-fns';
 import { useState, useMemo } from 'react';
 import { CategoryBadge, CategoryIcon } from './CategoryIcon';
 import { CsvImportModal } from './CsvImportModal';
@@ -58,6 +70,16 @@ export function TransactionsView({
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'>('date-desc');
+
+  // Advanced Date and Amount Filters
+  const [datePreset, setDatePreset] = useState<
+    'all' | 'today' | 'this-week' | 'this-month' | 'last-month' | 'last-30' | 'this-year' | 'custom'
+  >('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const [formData, setFormData] = useState<{
     date: string;
@@ -144,15 +166,64 @@ export function TransactionsView({
   };
 
   const filteredTransactions = useMemo(() => {
+    const now = new Date();
     return transactions
       .filter((t) => {
+        // Search description, category, notes
         const matchesSearch =
           t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
           t.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
           (t.notes && t.notes.toLowerCase().includes(searchQuery.toLowerCase()));
-        const matchesType = typeFilter === 'all' || t.type === typeFilter;
-        const matchesCategory = categoryFilter === 'all' || t.category === categoryFilter;
-        return matchesSearch && matchesType && matchesCategory;
+        if (!matchesSearch) return false;
+
+        // Type filter
+        if (typeFilter !== 'all' && t.type !== typeFilter) return false;
+
+        // Category filter
+        if (categoryFilter !== 'all' && t.category !== categoryFilter) return false;
+
+        // Min & Max Amount Filter
+        const converted = fromBaseCurrency(t.amount, currency);
+        if (minAmount && converted < parseFloat(minAmount)) return false;
+        if (maxAmount && converted > parseFloat(maxAmount)) return false;
+
+        // Date Preset and Range Filter
+        const txDate = new Date(t.date + 'T00:00:00');
+        if (datePreset === 'today') {
+          const todayStr = new Date().toISOString().split('T')[0];
+          if (t.date !== todayStr) return false;
+        } else if (datePreset === 'this-week') {
+          const start = startOfWeek(now, { weekStartsOn: 1 });
+          const end = endOfWeek(now, { weekStartsOn: 1 });
+          if (txDate < start || txDate > end) return false;
+        } else if (datePreset === 'this-month') {
+          const start = startOfMonth(now);
+          const end = endOfMonth(now);
+          if (txDate < start || txDate > end) return false;
+        } else if (datePreset === 'last-month') {
+          const prevMonth = subMonths(now, 1);
+          const start = startOfMonth(prevMonth);
+          const end = endOfMonth(prevMonth);
+          if (txDate < start || txDate > end) return false;
+        } else if (datePreset === 'last-30') {
+          const start = subDays(now, 30);
+          if (txDate < start || txDate > now) return false;
+        } else if (datePreset === 'this-year') {
+          const start = startOfYear(now);
+          const end = endOfYear(now);
+          if (txDate < start || txDate > end) return false;
+        } else if (datePreset === 'custom') {
+          if (startDate) {
+            const start = new Date(startDate + 'T00:00:00');
+            if (txDate < start) return false;
+          }
+          if (endDate) {
+            const end = new Date(endDate + 'T23:59:59');
+            if (txDate > end) return false;
+          }
+        }
+
+        return true;
       })
       .sort((a, b) => {
         if (sortBy === 'date-desc') return new Date(b.date).getTime() - new Date(a.date).getTime();
@@ -161,7 +232,40 @@ export function TransactionsView({
         if (sortBy === 'amount-asc') return a.amount - b.amount;
         return 0;
       });
-  }, [transactions, searchQuery, typeFilter, categoryFilter, sortBy]);
+  }, [
+    transactions,
+    searchQuery,
+    typeFilter,
+    categoryFilter,
+    sortBy,
+    datePreset,
+    startDate,
+    endDate,
+    minAmount,
+    maxAmount,
+    currency,
+  ]);
+
+  const hasActiveFilters =
+    searchQuery !== '' ||
+    typeFilter !== 'all' ||
+    categoryFilter !== 'all' ||
+    datePreset !== 'all' ||
+    startDate !== '' ||
+    endDate !== '' ||
+    minAmount !== '' ||
+    maxAmount !== '';
+
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setTypeFilter('all');
+    setCategoryFilter('all');
+    setDatePreset('all');
+    setStartDate('');
+    setEndDate('');
+    setMinAmount('');
+    setMaxAmount('');
+  };
 
   const totalIncome = filteredTransactions.filter((t) => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
   const totalExpenses = filteredTransactions.filter((t) => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
@@ -283,10 +387,10 @@ export function TransactionsView({
       </div>
 
       {/* Filter and Search Panel */}
-      <div className="glass-panel rounded-2xl p-4 shadow-sm space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+      <div className="glass-panel rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
           {/* Search bar */}
-          <div className="md:col-span-4 relative">
+          <div className="lg:col-span-4 relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
@@ -306,7 +410,7 @@ export function TransactionsView({
           </div>
 
           {/* Type segmented control */}
-          <div className="md:col-span-3 flex bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/60">
+          <div className="lg:col-span-3 flex bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/60">
             {(['all', 'income', 'expense', 'transfer'] as const).map((t) => (
               <button
                 key={t}
@@ -322,66 +426,207 @@ export function TransactionsView({
             ))}
           </div>
 
-          {/* Category Filter */}
-          <div className="md:col-span-3">
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
-            >
-              <option value="all">All Categories</option>
-              {CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
+          {/* Date Preset Filter */}
+          <div className="lg:col-span-3">
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <select
+                value={datePreset}
+                onChange={(e) => {
+                  const val = e.target.value as any;
+                  setDatePreset(val);
+                  if (val !== 'custom') {
+                    setStartDate('');
+                    setEndDate('');
+                  }
+                }}
+                className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-medium"
+              >
+                <option value="all">📅 All Dates</option>
+                <option value="today">Today</option>
+                <option value="this-week">This Week</option>
+                <option value="this-month">This Month</option>
+                <option value="last-month">Last Month</option>
+                <option value="last-30">Last 30 Days</option>
+                <option value="this-year">This Year (YTD)</option>
+                <option value="custom">Custom Date Range...</option>
+              </select>
+            </div>
           </div>
 
-          {/* Sort order */}
-          <div className="md:col-span-2">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+          {/* Toggle Advanced Filters Button */}
+          <div className="lg:col-span-2 flex items-center gap-2">
+            <button
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              className={`w-full py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                showAdvancedFilters || minAmount || maxAmount || categoryFilter !== 'all' || datePreset === 'custom'
+                  ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300'
+                  : 'border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+              }`}
             >
-              <option value="date-desc">Newest First</option>
-              <option value="date-asc">Oldest First</option>
-              <option value="amount-desc">Highest Amount</option>
-              <option value="amount-asc">Lowest Amount</option>
-            </select>
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Filters</span>
+              {(minAmount || maxAmount || categoryFilter !== 'all' || datePreset === 'custom') && (
+                <span className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400" />
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Active filters tag strip if filtered */}
-        {(searchQuery || typeFilter !== 'all' || categoryFilter !== 'all') && (
-          <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
-            <span>Filters active:</span>
+        {/* Expandable Advanced Filter Drawer */}
+        {showAdvancedFilters && (
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in fade-in duration-150">
+            {/* Category selector */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                Category
+              </label>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              >
+                <option value="all">All Categories</option>
+                {CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Sort Order */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                Sort By
+              </label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              >
+                <option value="date-desc">Newest First</option>
+                <option value="date-asc">Oldest First</option>
+                <option value="amount-desc">Highest Amount</option>
+                <option value="amount-asc">Lowest Amount</option>
+              </select>
+            </div>
+
+            {/* Start Date & End Date (for Custom Range) */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                From Date
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setDatePreset('custom');
+                }}
+                className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                To Date
+              </label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  setDatePreset('custom');
+                }}
+                className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+            </div>
+
+            {/* Min & Max Amount Range */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                Min Amount ({CURRENCY_MAP[currency]?.symbol || '$'})
+              </label>
+              <input
+                type="number"
+                step="any"
+                placeholder="0.00"
+                value={minAmount}
+                onChange={(e) => setMinAmount(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                Max Amount ({CURRENCY_MAP[currency]?.symbol || '$'})
+              </label>
+              <input
+                type="number"
+                step="any"
+                placeholder="No limit"
+                value={maxAmount}
+                onChange={(e) => setMaxAmount(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Active filters badge strip with 1-click Clear All */}
+        {hasActiveFilters && (
+          <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 flex-wrap">
+            <span className="font-semibold text-slate-600 dark:text-slate-300">Active filters:</span>
             {searchQuery && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium">
                 "{searchQuery}"
                 <X className="w-3 h-3 cursor-pointer" onClick={() => setSearchQuery('')} />
               </span>
             )}
             {typeFilter !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 capitalize">
-                {typeFilter}
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium capitalize">
+                Type: {typeFilter}
                 <X className="w-3 h-3 cursor-pointer" onClick={() => setTypeFilter('all')} />
               </span>
             )}
             {categoryFilter !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium">
                 {categoryFilter}
                 <X className="w-3 h-3 cursor-pointer" onClick={() => setCategoryFilter('all')} />
               </span>
             )}
+            {datePreset !== 'all' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium">
+                Date: {datePreset.replace('-', ' ')}
+                {startDate && endDate ? ` (${startDate} to ${endDate})` : ''}
+                <X
+                  className="w-3 h-3 cursor-pointer"
+                  onClick={() => {
+                    setDatePreset('all');
+                    setStartDate('');
+                    setEndDate('');
+                  }}
+                />
+              </span>
+            )}
+            {(minAmount || maxAmount) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium">
+                Amount: {minAmount ? `≥${minAmount}` : ''} {maxAmount ? `≤${maxAmount}` : ''}
+                <X
+                  className="w-3 h-3 cursor-pointer"
+                  onClick={() => {
+                    setMinAmount('');
+                    setMaxAmount('');
+                  }}
+                />
+              </span>
+            )}
+
             <button
-              onClick={() => {
-                setSearchQuery('');
-                setTypeFilter('all');
-                setCategoryFilter('all');
-              }}
-              className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline ml-auto"
+              onClick={clearAllFilters}
+              className="text-xs text-rose-600 dark:text-rose-400 font-semibold hover:underline ml-auto flex items-center gap-1 cursor-pointer"
             >
-              Reset Filters
+              <Trash2 className="w-3 h-3" />
+              <span>Clear All</span>
             </button>
           </div>
         )}

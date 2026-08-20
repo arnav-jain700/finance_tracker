@@ -31,8 +31,18 @@ import {
   Zap,
   Edit2,
   HandCoins,
+  Search,
+  Filter,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import {
+  startOfMonth,
+  endOfMonth,
+  subMonths,
+  startOfYear,
+  endOfYear,
+  subDays,
+} from 'date-fns';
 import { soundFx } from '../utils/audio';
 
 interface BillsViewProps {
@@ -60,6 +70,17 @@ export function BillsView({
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(billGroups[0]?.id || null);
+
+  // Filter States for Bill Splits
+  const [searchQuery, setSearchQuery] = useState('');
+  const [datePreset, setDatePreset] = useState<
+    'all' | 'this-month' | 'last-month' | 'last-30' | 'this-year' | 'custom'
+  >('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [memberFilter, setMemberFilter] = useState('all');
+  const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'>('date-desc');
+  const [showFilters, setShowFilters] = useState(false);
 
   const [groupName, setGroupName] = useState('');
   const [memberInput, setMemberInput] = useState('');
@@ -635,6 +656,84 @@ export function BillsView({
     return settlements;
   };
 
+  const allUniqueMembers = useMemo(() => {
+    const set = new Set<string>();
+    billGroups.forEach((g) => g.members.forEach((m) => set.add(m)));
+    return Array.from(set);
+  }, [billGroups]);
+
+  const hasActiveFilters =
+    searchQuery !== '' ||
+    datePreset !== 'all' ||
+    startDate !== '' ||
+    endDate !== '' ||
+    memberFilter !== 'all';
+
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setDatePreset('all');
+    setStartDate('');
+    setEndDate('');
+    setMemberFilter('all');
+  };
+
+  const getFilteredExpenses = (expenses: BillExpense[]) => {
+    const now = new Date();
+    return expenses
+      .filter((exp) => {
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          const descMatch = exp.description.toLowerCase().includes(q);
+          const payerMatch = exp.paidBy.toLowerCase().includes(q);
+          const memberMatch = exp.members.some((m) => m.name.toLowerCase().includes(q));
+          if (!descMatch && !payerMatch && !memberMatch) return false;
+        }
+
+        if (memberFilter !== 'all') {
+          const hasMember =
+            exp.members.some((m) => m.name === memberFilter) || exp.paidBy === memberFilter;
+          if (!hasMember) return false;
+        }
+
+        const expDate = new Date(exp.date + 'T00:00:00');
+        if (datePreset === 'this-month') {
+          const start = startOfMonth(now);
+          const end = endOfMonth(now);
+          if (expDate < start || expDate > end) return false;
+        } else if (datePreset === 'last-month') {
+          const prevMonth = subMonths(now, 1);
+          const start = startOfMonth(prevMonth);
+          const end = endOfMonth(prevMonth);
+          if (expDate < start || expDate > end) return false;
+        } else if (datePreset === 'last-30') {
+          const start = subDays(now, 30);
+          if (expDate < start || expDate > now) return false;
+        } else if (datePreset === 'this-year') {
+          const start = startOfYear(now);
+          const end = endOfYear(now);
+          if (expDate < start || expDate > end) return false;
+        } else if (datePreset === 'custom') {
+          if (startDate) {
+            const start = new Date(startDate + 'T00:00:00');
+            if (expDate < start) return false;
+          }
+          if (endDate) {
+            const end = new Date(endDate + 'T23:59:59');
+            if (expDate > end) return false;
+          }
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'date-desc') return new Date(b.date).getTime() - new Date(a.date).getTime();
+        if (sortBy === 'date-asc') return new Date(a.date).getTime() - new Date(b.date).getTime();
+        if (sortBy === 'amount-desc') return b.totalAmount - a.totalAmount;
+        if (sortBy === 'amount-asc') return a.totalAmount - b.totalAmount;
+        return 0;
+      });
+  };
+
   // Global settlement overview
   let grandTotalSpent = 0;
   billGroups.forEach((g) => {
@@ -642,7 +741,7 @@ export function BillsView({
   });
 
   return (
-    <div className="space-y-8 pb-8">
+    <div className="space-y-6 pb-8">
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -661,6 +760,188 @@ export function BillsView({
           <span>New Split Group</span>
         </button>
       </div>
+
+      {/* Bill Splits Search & Filter Panel */}
+      {billGroups.length > 0 && (
+        <div className="glass-panel rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
+            {/* Search description / members */}
+            <div className="lg:col-span-4 relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search bills, items, or members..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-9 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Date Preset Filter */}
+            <div className="lg:col-span-3">
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <select
+                  value={datePreset}
+                  onChange={(e) => {
+                    const val = e.target.value as any;
+                    setDatePreset(val);
+                    if (val !== 'custom') {
+                      setStartDate('');
+                      setEndDate('');
+                    }
+                  }}
+                  className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-medium"
+                >
+                  <option value="all">📅 All Dates</option>
+                  <option value="this-month">This Month</option>
+                  <option value="last-month">Last Month</option>
+                  <option value="last-30">Last 30 Days</option>
+                  <option value="this-year">This Year (YTD)</option>
+                  <option value="custom">Custom Date Range...</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Member Filter */}
+            <div className="lg:col-span-3">
+              <select
+                value={memberFilter}
+                onChange={(e) => setMemberFilter(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-medium"
+              >
+                <option value="all">👥 All Members</option>
+                {allUniqueMembers.map((m) => (
+                  <option key={m} value={m}>
+                    Member: {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Toggle Sort & Custom Date Drawer */}
+            <div className="lg:col-span-2 flex items-center gap-2">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`w-full py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                  showFilters || datePreset === 'custom' || sortBy !== 'date-desc'
+                    ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300'
+                    : 'border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Options</span>
+                {(datePreset === 'custom' || sortBy !== 'date-desc') && (
+                  <span className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Expandable Options Drawer */}
+          {showFilters && (
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-3 animate-in fade-in duration-150">
+              {/* Sort Order */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                  Sort Ledger By
+                </label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                >
+                  <option value="date-desc">Newest First</option>
+                  <option value="date-asc">Oldest First</option>
+                  <option value="amount-desc">Highest Amount</option>
+                  <option value="amount-asc">Lowest Amount</option>
+                </select>
+              </div>
+
+              {/* Start Date */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                  From Date
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setDatePreset('custom');
+                  }}
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                />
+              </div>
+
+              {/* End Date */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                  To Date
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setDatePreset('custom');
+                  }}
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Active Filter Chips */}
+          {hasActiveFilters && (
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 flex-wrap">
+              <span className="font-semibold text-slate-600 dark:text-slate-300">Active filters:</span>
+              {searchQuery && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium">
+                  "{searchQuery}"
+                  <X className="w-3 h-3 cursor-pointer" onClick={() => setSearchQuery('')} />
+                </span>
+              )}
+              {memberFilter !== 'all' && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium">
+                  Member: {memberFilter}
+                  <X className="w-3 h-3 cursor-pointer" onClick={() => setMemberFilter('all')} />
+                </span>
+              )}
+              {datePreset !== 'all' && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium">
+                  Date: {datePreset.replace('-', ' ')}
+                  {startDate && endDate ? ` (${startDate} to ${endDate})` : ''}
+                  <X
+                    className="w-3 h-3 cursor-pointer"
+                    onClick={() => {
+                      setDatePreset('all');
+                      setStartDate('');
+                      setEndDate('');
+                    }}
+                  />
+                </span>
+              )}
+
+              <button
+                onClick={clearAllFilters}
+                className="text-xs text-rose-600 dark:text-rose-400 font-semibold hover:underline ml-auto flex items-center gap-1 cursor-pointer"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Clear All</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Bill Groups Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -857,54 +1138,60 @@ export function BillsView({
 
                   {isExpanded && (
                     <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
-                      {group.expenses.map((exp) => (
-                        <div
-                          key={exp.id}
-                          className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50 flex items-center justify-between text-xs group/item transition-all"
-                        >
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-2">
-                              <p className="font-semibold text-slate-900 dark:text-white">{exp.description}</p>
-                              {exp.description.startsWith('Debt Settlement') && (
-                                <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
-                                  Settled
-                                </span>
-                              )}
+                      {getFilteredExpenses(group.expenses).length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-400">
+                          No bills match active search/filters
+                        </div>
+                      ) : (
+                        getFilteredExpenses(group.expenses).map((exp) => (
+                          <div
+                            key={exp.id}
+                            className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50 flex items-center justify-between text-xs group/item transition-all"
+                          >
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold text-slate-900 dark:text-white">{exp.description}</p>
+                                {exp.description.startsWith('Debt Settlement') && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
+                                    Settled
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
+                                <span>Paid by <strong className="font-medium text-slate-700 dark:text-slate-300">{exp.paidBy}</strong></span>
+                                <span>•</span>
+                                <span>{exp.date}</span>
+                              </p>
                             </div>
-                            <p className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
-                              <span>Paid by <strong className="font-medium text-slate-700 dark:text-slate-300">{exp.paidBy}</strong></span>
-                              <span>•</span>
-                              <span>{exp.date}</span>
-                            </p>
-                          </div>
 
-                          <div className="flex items-center gap-2.5">
-                            <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
-                              {formatCurrency(exp.totalAmount, currency)}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditExpense(group.id, exp)}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition-colors"
-                                title="Edit Expense, Payer & Split"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              {onDeleteExpense && (
+                            <div className="flex items-center gap-2.5">
+                              <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
+                                {formatCurrency(exp.totalAmount, currency)}
+                              </span>
+                              <div className="flex items-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => handleDeleteExpense(group.id, exp.id)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-slate-700 transition-colors"
-                                  title="Delete Expense"
+                                  onClick={() => handleOpenEditExpense(group.id, exp)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition-colors"
+                                  title="Edit Expense, Payer & Split"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Edit2 className="w-3.5 h-3.5" />
                                 </button>
-                              )}
+                                {onDeleteExpense && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteExpense(group.id, exp.id)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-slate-700 transition-colors"
+                                    title="Delete Expense"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
