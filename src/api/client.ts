@@ -19,6 +19,8 @@ export interface UserProfile {
   color?: string;
   pin?: string;
   createdAt?: string;
+  authProvider?: 'google' | 'local';
+  googleId?: string;
 }
 
 export interface UserDataPayload {
@@ -38,6 +40,27 @@ export const apiClient = {
       return data.status === 'ok';
     } catch {
       return false;
+    }
+  },
+
+  async googleAuth(payload: {
+    googleId: string;
+    name: string;
+    email: string;
+    avatar: string;
+    currency?: string;
+  }): Promise<UserProfile | null> {
+    try {
+      const res = await fetch(`${API_BASE}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      return data.success ? data.user : null;
+    } catch (e) {
+      console.error('Google auth error on backend:', e);
+      return null;
     }
   },
 

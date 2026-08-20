@@ -13,6 +13,7 @@ import {
   resetUserData,
   getUserData,
   saveUserData,
+  findOrCreateGoogleUser,
   INITIAL_USERS,
 } from './db.js';
 
@@ -104,6 +105,29 @@ app.get('/api/users', (req, res) => {
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch users' });
+  }
+});
+
+// Google OAuth login / synchronization
+app.post('/api/auth/google', (req, res) => {
+  try {
+    const { googleId, name, email, avatar, currency } = req.body;
+    if (!email || !name) {
+      return res.status(400).json({ success: false, error: 'Name and email are required for Google Auth' });
+    }
+
+    const user = findOrCreateGoogleUser({
+      googleId: googleId || email,
+      name,
+      email,
+      avatar: avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+      currency: currency || 'USD',
+    });
+
+    res.json({ success: true, user });
+  } catch (error) {
+    console.error('Error during Google authentication:', error);
+    res.status(500).json({ success: false, error: 'Google auth failed' });
   }
 });
 

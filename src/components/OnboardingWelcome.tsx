@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CURRENCY_MAP } from '../store';
 import { soundFx } from '../utils/audio';
+import { GoogleAuthButton } from './GoogleAuthButton';
 import {
   Wallet,
   Sparkles,
@@ -25,6 +26,12 @@ interface OnboardingWelcomeProps {
     color: string;
     pin?: string;
   }) => Promise<void>;
+  onGoogleAuth: (payload: {
+    googleId: string;
+    name: string;
+    email: string;
+    avatar: string;
+  }) => Promise<void>;
   isServerOnline: boolean;
 }
 
@@ -41,7 +48,7 @@ const USER_COLORS = [
 
 const PRESET_ROLES = ['Personal', 'Family Lead', 'Freelancer', 'Business', 'Student'];
 
-export function OnboardingWelcome({ onCreateUser, isServerOnline }: OnboardingWelcomeProps) {
+export function OnboardingWelcome({ onCreateUser, onGoogleAuth, isServerOnline }: OnboardingWelcomeProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [currency, setCurrency] = useState('USD');
@@ -80,7 +87,7 @@ export function OnboardingWelcome({ onCreateUser, isServerOnline }: OnboardingWe
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-10 right-10 w-80 h-80 bg-emerald-600/15 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="relative w-full max-w-xl bg-slate-900/90 border border-slate-800 backdrop-blur-xl rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8">
+      <div className="relative w-full max-w-xl bg-slate-900/90 border border-slate-800 backdrop-blur-xl rounded-3xl p-6 sm:p-10 shadow-2xl space-y-7">
         {/* Top Header */}
         <div className="text-center space-y-3">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-semibold">
@@ -88,15 +95,31 @@ export function OnboardingWelcome({ onCreateUser, isServerOnline }: OnboardingWe
             <span>Welcome to ApexFinance Pro</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold font-heading text-white tracking-tight">
-            Create Your Profile
+            Sign In or Create Profile
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto">
-            Your finances remain 100% private. Set up your custom profile and primary wallet to get started.
+            Your finances remain 100% private. Authenticate with Google or set up a custom offline profile.
           </p>
         </div>
 
+        {/* 1-Click Google Sign-In */}
+        <div className="space-y-4">
+          <GoogleAuthButton
+            onSuccess={onGoogleAuth}
+            text="Continue with Google"
+          />
+
+          <div className="relative flex py-2 items-center">
+            <div className="flex-grow border-t border-slate-800"></div>
+            <span className="flex-shrink mx-4 text-slate-500 text-[11px] font-semibold tracking-wider uppercase">
+              Or Custom Offline Profile
+            </span>
+            <div className="flex-grow border-t border-slate-800"></div>
+          </div>
+        </div>
+
         {/* Setup Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
           {/* Avatar Preview & Name */}
           <div className="space-y-4">
             <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60">

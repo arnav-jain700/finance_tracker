@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { UserProfile } from '../api/client';
 import { CURRENCY_MAP, toBaseCurrency } from '../store';
 import { soundFx } from '../utils/audio';
+import { GoogleAuthButton } from './GoogleAuthButton';
 import {
   Users,
   UserPlus,
@@ -35,6 +36,12 @@ interface UserSwitcherModalProps {
     color: string;
     pin?: string;
   }) => Promise<void>;
+  onGoogleAuth?: (payload: {
+    googleId: string;
+    name: string;
+    email: string;
+    avatar: string;
+  }) => Promise<void>;
   onUpdateUser?: (userId: string, data: Partial<Omit<UserProfile, 'id'>>) => Promise<void>;
   onDeleteUser?: (userId: string) => Promise<void>;
   onResetUserData?: (userId: string) => Promise<void>;
@@ -50,6 +57,7 @@ export function UserSwitcherModal({
   currentUser,
   onSelectUser,
   onCreateUser,
+  onGoogleAuth,
   onUpdateUser,
   onDeleteUser,
   onResetUserData,
@@ -298,12 +306,24 @@ export function UserSwitcherModal({
               })}
             </div>
 
+            {onGoogleAuth && (
+              <div className="pt-1">
+                <GoogleAuthButton
+                  onSuccess={async (payload) => {
+                    await onGoogleAuth(payload);
+                    onClose();
+                  }}
+                  text="Connect with Google"
+                />
+              </div>
+            )}
+
             <button
               onClick={startCreate}
               className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-500/50 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all"
             >
               <UserPlus className="w-4 h-4" />
-              <span>Create New User Profile</span>
+              <span>Create Custom Offline Profile</span>
             </button>
           </div>
         )}

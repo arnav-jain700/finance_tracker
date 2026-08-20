@@ -81,6 +81,68 @@ export function createUser(userData) {
   return newUser;
 }
 
+export function findOrCreateGoogleUser(googleData) {
+  const users = getUsers();
+  // Check if user already exists by googleId or email
+  let existingUser = users.find(
+    (u) => (u.googleId && u.googleId === googleData.googleId) || (u.email && u.email === googleData.email)
+  );
+
+  if (existingUser) {
+    existingUser.name = googleData.name || existingUser.name;
+    existingUser.avatar = googleData.avatar || existingUser.avatar;
+    existingUser.googleId = googleData.googleId || existingUser.googleId;
+    existingUser.authProvider = 'google';
+    updateUser(existingUser.id, existingUser);
+    return existingUser;
+  }
+
+  // Create new Google user profile
+  const newUser = {
+    id: `google-${googleData.googleId || Date.now()}`,
+    name: googleData.name.trim(),
+    email: googleData.email.trim(),
+    avatar: googleData.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(googleData.name)}`,
+    currency: googleData.currency || 'USD',
+    role: 'Google Account',
+    color: '#3b82f6',
+    authProvider: 'google',
+    googleId: googleData.googleId,
+    createdAt: new Date().toISOString().split('T')[0],
+  };
+
+  users.push(newUser);
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+
+  // Initialize clean data file for new Google user if not exists
+  const existingData = getUserData(newUser.id);
+  if (!existingData) {
+    const initialUserData = {
+      transactions: [],
+      budgets: [],
+      billGroups: [],
+      accounts: [
+        {
+          id: `acc-${Date.now()}-1`,
+          name: `${googleData.name}'s Primary Account`,
+          type: 'checking',
+          balance: 0,
+          currency: googleData.currency || 'USD',
+          institution: 'Main Wallet',
+          accountNumber: '•••• ' + Math.floor(1000 + Math.random() * 9000),
+          color: 'from-blue-600 to-indigo-700',
+          isDefault: true,
+        },
+      ],
+      goals: [],
+      subscriptions: [],
+    };
+    saveUserData(newUser.id, initialUserData);
+  }
+
+  return newUser;
+}
+
 export function updateUser(userId, updatedFields) {
   const users = getUsers();
   const index = users.findIndex((u) => u.id === userId);
