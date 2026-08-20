@@ -352,39 +352,6 @@ function App() {
     await handleSelectUser(created);
   };
 
-  const handleGoogleAuth = async (googleUser: {
-    googleId: string;
-    name: string;
-    email: string;
-    avatar: string;
-  }) => {
-    let authUser: UserProfile | null = null;
-    if (isServerOnline) {
-      authUser = await apiClient.googleAuth(googleUser);
-    }
-
-    if (!authUser) {
-      // Local fallback for Google user
-      authUser = {
-        id: `google-${googleUser.googleId}`,
-        name: googleUser.name,
-        email: googleUser.email,
-        avatar: googleUser.avatar,
-        currency: 'USD',
-        role: 'Google Account',
-        color: '#3b82f6',
-        authProvider: 'google',
-        googleId: googleUser.googleId,
-        createdAt: new Date().toISOString().split('T')[0],
-      };
-    }
-
-    const nextUsers = [...users.filter((u) => u.id !== authUser!.id && u.email !== authUser!.email), authUser];
-    setUsers(nextUsers);
-    localStorage.setItem('users_list', JSON.stringify(nextUsers));
-    await handleSelectUser(authUser);
-  };
-
   const handleSignOut = () => {
     setCurrentUser(null);
     localStorage.removeItem('active_user_id');
@@ -670,7 +637,6 @@ function App() {
     return (
       <OnboardingWelcome
         onCreateUser={handleCreateUser}
-        onGoogleAuth={handleGoogleAuth}
         isServerOnline={isServerOnline}
       />
     );
@@ -694,7 +660,6 @@ function App() {
         isServerOnline={isServerOnline}
         onSelectUser={handleSelectUser}
         onCreateUser={handleCreateUser}
-        onGoogleAuth={handleGoogleAuth}
         onSignOut={handleSignOut}
         onUpdateUser={handleUpdateUser}
         onDeleteUser={handleDeleteUser}

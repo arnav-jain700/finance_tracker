@@ -92,12 +92,6 @@ interface LayoutProps {
     color: string;
     pin?: string;
   }) => Promise<void>;
-  onGoogleAuth?: (payload: {
-    googleId: string;
-    name: string;
-    email: string;
-    avatar: string;
-  }) => Promise<void>;
   onSignOut?: () => void;
   onUpdateUser?: (userId: string, data: Partial<Omit<UserProfile, 'id'>>) => Promise<void>;
   onDeleteUser?: (userId: string) => Promise<void>;
@@ -148,7 +142,6 @@ export function Layout({
   isServerOnline,
   onSelectUser,
   onCreateUser,
-  onGoogleAuth,
   onSignOut,
   onUpdateUser,
   onDeleteUser,
@@ -685,7 +678,6 @@ export function Layout({
         currentUser={currentUser}
         onSelectUser={onSelectUser}
         onCreateUser={onCreateUser}
-        onGoogleAuth={onGoogleAuth}
         onUpdateUser={onUpdateUser}
         onDeleteUser={onDeleteUser}
         onResetUserData={onResetUserData}
