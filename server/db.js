@@ -224,5 +224,208 @@ export function getUserData(userId) {
 export function saveUserData(userId, data) {
   const filePath = getUserDataFilePath(userId);
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+
+  // Index bill groups into shared registry for real-time live member access
+  if (data && Array.isArray(data.billGroups)) {
+    try {
+      const user = getUserById(userId);
+      const userCurrency = user?.currency || 'USD';
+      const userName = user?.name || 'Owner';
+      data.billGroups.forEach((bg) => {
+        upsertSharedBillGroup(bg, userId, userName, userCurrency);
+      });
+    } catch (e) {
+      console.warn('Error indexing shared bill groups:', e);
+    }
+  }
+
   return data;
+}
+
+// ----------------------------------------------------
+// Real-Time Shared Bill Groups Engine
+// ----------------------------------------------------
+const SHARED_GROUPS_FILE = path.join(DATA_DIR, 'shared_groups.json');
+
+function initSharedGroupsDb() {
+  if (!fs.existsSync(SHARED_GROUPS_FILE)) {
+    fs.writeFileSync(SHARED_GROUPS_FILE, JSON.stringify([], null, 2), 'utf-8');
+  }
+}
+
+export function getSharedGroups() {
+  initSharedGroupsDb();
+  try {
+    const raw = fs.readFileSync(SHARED_GROUPS_FILE, 'utf-8');
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error reading shared groups file:', e);
+    return [];
+  }
+}
+
+export function getSharedGroupById(groupId) {
+  const groups = getSharedGroups();
+  let found = groups.find((g) => g.id === groupId);
+
+  // If not yet in shared registry, search across all user data files
+  if (!found) {
+    const users = getUsers();
+    for (const u of users) {
+      const uData = getUserData(u.id);
+      if (uData && Array.isArray(uData.billGroups)) {
+        const match = uData.billGroups.find((bg) => bg.id === groupId);
+        if (match) {
+          found = upsertSharedBillGroup(match, u.id, u.name, u.currency || 'USD');
+          break;
+        }
+      }
+    }
+  }
+
+  return found || null;
+}
+
+export function upsertSharedBillGroup(group, ownerId, ownerName, currency = 'USD') {
+  const groups = getSharedGroups();
+  const existingIdx = groups.findIndex((g) => g.id === group.id);
+
+  const sharedRecord = {
+    id: group.id,
+    name: group.name,
+    members: group.members || ['You'],
+    expenses: group.expenses || [],
+    settlements: group.settlements || [],
+    ownerId: ownerId || (existingIdx !== -1 ? groups[existingIdx].ownerId : 'unknown'),
+    ownerName: ownerName || (existingIdx !== -1 ? groups[existingIdx].ownerName : 'Group Owner'),
+    currency: currency || (existingIdx !== -1 ? groups[existingIdx].currency : 'USD'),
+    createdAt: group.createdAt || (existingIdx !== -1 ? groups[existingIdx].createdAt : new Date().toISOString()),
+    lastModified: new Date().toISOString(),
+    version: existingIdx !== -1 ? (groups[existingIdx].version || 1) + 1 : 1,
+  };
+
+  if (existingIdx !== -1) {
+    groups[existingIdx] = sharedRecord;
+  } else {
+    groups.push(sharedRecord);
+  }
+
+  fs.writeFileSync(SHARED_GROUPS_FILE, JSON.stringify(groups, null, 2), 'utf-8');
+  return sharedRecord;
+}
+
+function syncSharedGroupToUser(groupId, updatedGroup) {
+  if (!updatedGroup.ownerId) return;
+  const uData = getUserData(updatedGroup.ownerId);
+  if (uData && Array.isArray(uData.billGroups)) {
+    const gIdx = uData.billGroups.findIndex((bg) => bg.id === groupId);
+    if (gIdx !== -1) {
+      uData.billGroups[gIdx] = {
+        id: updatedGroup.id,
+        name: updatedGroup.name,
+        members: updatedGroup.members,
+        expenses: updatedGroup.expenses,
+        settlements: updatedGroup.settlements,
+        createdAt: updatedGroup.createdAt,
+      };
+      const filePath = getUserDataFilePath(updatedGroup.ownerId);
+      fs.writeFileSync(filePath, JSON.stringify(uData, null, 2), 'utf-8');
+    }
+  }
+}
+
+export function addExpenseToSharedGroup(groupId, expenseData) {
+  const group = getSharedGroupById(groupId);
+  if (!group) return null;
+
+  const newExpense = {
+    id: `exp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    description: expenseData.description.trim(),
+    totalAmount: Number(expenseData.totalAmount) || 0,
+    paidBy: expenseData.paidBy || group.members[0] || 'Unknown',
+    members: expenseData.members || [],
+    date: expenseData.date || new Date().toISOString().split('T')[0],
+    category: expenseData.category || 'General',
+    createdAt: new Date().toISOString(),
+  };
+
+  group.expenses = [newExpense, ...group.expenses];
+  group.lastModified = new Date().toISOString();
+  group.version = (group.version || 1) + 1;
+
+  upsertSharedBillGroup(group, group.ownerId, group.ownerName, group.currency);
+  syncSharedGroupToUser(groupId, group);
+  return { group, expense: newExpense };
+}
+
+export function updateSharedGroupExpense(groupId, expenseData) {
+  const group = getSharedGroupById(groupId);
+  if (!group) return null;
+
+  const idx = group.expenses.findIndex((e) => e.id === expenseData.id);
+  if (idx === -1) return null;
+
+  group.expenses[idx] = {
+    ...group.expenses[idx],
+    ...expenseData,
+  };
+  group.lastModified = new Date().toISOString();
+  group.version = (group.version || 1) + 1;
+
+  upsertSharedBillGroup(group, group.ownerId, group.ownerName, group.currency);
+  syncSharedGroupToUser(groupId, group);
+  return { group, expense: group.expenses[idx] };
+}
+
+export function deleteSharedGroupExpense(groupId, expenseId) {
+  const group = getSharedGroupById(groupId);
+  if (!group) return null;
+
+  group.expenses = group.expenses.filter((e) => e.id !== expenseId);
+  group.lastModified = new Date().toISOString();
+  group.version = (group.version || 1) + 1;
+
+  upsertSharedBillGroup(group, group.ownerId, group.ownerName, group.currency);
+  syncSharedGroupToUser(groupId, group);
+  return group;
+}
+
+export function recordSettlementInSharedGroup(groupId, settlementData) {
+  const group = getSharedGroupById(groupId);
+  if (!group) return null;
+
+  const newSettlement = {
+    id: `settle-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    from: settlementData.from,
+    to: settlementData.to,
+    amount: Number(settlementData.amount) || 0,
+    date: settlementData.date || new Date().toISOString().split('T')[0],
+    method: settlementData.method || 'Cash / Transfer',
+    notes: settlementData.notes || '',
+    recordedAt: new Date().toISOString(),
+  };
+
+  // Also convert settlement into a balance-offsetting expense record so Splitwise-style balances resolve
+  const settlementExpense = {
+    id: `exp-settle-${Date.now()}`,
+    description: `🤝 Settlement: ${settlementData.from} paid ${settlementData.to}`,
+    totalAmount: Number(settlementData.amount) || 0,
+    paidBy: settlementData.from,
+    date: settlementData.date || new Date().toISOString().split('T')[0],
+    category: 'Transfer',
+    members: group.members.map((m) => ({
+      name: m,
+      paidAmount: m === settlementData.from ? Number(settlementData.amount) || 0 : 0,
+      shareAmount: m === settlementData.to ? Number(settlementData.amount) || 0 : 0,
+    })),
+  };
+
+  group.expenses = [settlementExpense, ...group.expenses];
+  group.settlements = [newSettlement, ...(group.settlements || [])];
+  group.lastModified = new Date().toISOString();
+  group.version = (group.version || 1) + 1;
+
+  upsertSharedBillGroup(group, group.ownerId, group.ownerName, group.currency);
+  syncSharedGroupToUser(groupId, group);
+  return { group, settlement: newSettlement };
 }

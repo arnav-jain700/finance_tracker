@@ -15,6 +15,11 @@ import {
   saveUserData,
   findOrCreateGoogleUser,
   INITIAL_USERS,
+  getSharedGroupById,
+  addExpenseToSharedGroup,
+  updateSharedGroupExpense,
+  deleteSharedGroupExpense,
+  recordSettlementInSharedGroup,
 } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -225,6 +230,134 @@ app.post('/api/users/:userId/data', (req, res) => {
   } catch (error) {
     console.error('Error saving user data:', error);
     res.status(500).json({ success: false, error: 'Failed to save user data' });
+  }
+});
+
+// ----------------------------------------------------
+// Public Real-Time Shared Bill Split Endpoints
+// ----------------------------------------------------
+
+// Get live shared bill group data & member balances
+app.get('/api/shared-bills/:groupId', (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const group = getSharedGroupById(groupId);
+    if (!group) {
+      return res.status(404).json({ success: false, error: 'Shared bill group not found' });
+    }
+    res.json({ success: true, group });
+  } catch (error) {
+    console.error('Error fetching shared bill group:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch shared group' });
+  }
+});
+
+// Fast lightweight real-time polling check for live updates
+app.get('/api/shared-bills/:groupId/live', (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const group = getSharedGroupById(groupId);
+    if (!group) {
+      return res.status(404).json({ success: false, error: 'Group not found' });
+    }
+    res.json({
+      success: true,
+      id: group.id,
+      version: group.version || 1,
+      lastModified: group.lastModified,
+      expenseCount: group.expenses?.length || 0,
+      settlementCount: group.settlements?.length || 0,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Add an expense into the shared group in real time
+app.post('/api/shared-bills/:groupId/expenses', (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { description, totalAmount, paidBy, members, date, category } = req.body;
+    if (!description || !totalAmount) {
+      return res.status(400).json({ success: false, error: 'Description and total amount are required' });
+    }
+
+    const result = addExpenseToSharedGroup(groupId, {
+      description,
+      totalAmount,
+      paidBy,
+      members,
+      date,
+      category,
+    });
+
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Group not found' });
+    }
+
+    res.status(201).json({ success: true, group: result.group, expense: result.expense });
+  } catch (error) {
+    console.error('Error adding expense to shared group:', error);
+    res.status(500).json({ success: false, error: 'Failed to add expense' });
+  }
+});
+
+// Update an expense in the shared group
+app.put('/api/shared-bills/:groupId/expenses/:expenseId', (req, res) => {
+  try {
+    const { groupId, expenseId } = req.params;
+    const result = updateSharedGroupExpense(groupId, { ...req.body, id: expenseId });
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Group or expense not found' });
+    }
+    res.json({ success: true, group: result.group, expense: result.expense });
+  } catch (error) {
+    console.error('Error updating shared expense:', error);
+    res.status(500).json({ success: false, error: 'Failed to update expense' });
+  }
+});
+
+// Delete an expense in the shared group
+app.delete('/api/shared-bills/:groupId/expenses/:expenseId', (req, res) => {
+  try {
+    const { groupId, expenseId } = req.params;
+    const group = deleteSharedGroupExpense(groupId, expenseId);
+    if (!group) {
+      return res.status(404).json({ success: false, error: 'Group not found' });
+    }
+    res.json({ success: true, group });
+  } catch (error) {
+    console.error('Error deleting shared expense:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete expense' });
+  }
+});
+
+// Record a payment / settlement in the shared group in real time
+app.post('/api/shared-bills/:groupId/settle', (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { from, to, amount, date, method, notes } = req.body;
+    if (!from || !to || !amount) {
+      return res.status(400).json({ success: false, error: 'From, To, and Amount are required' });
+    }
+
+    const result = recordSettlementInSharedGroup(groupId, {
+      from,
+      to,
+      amount,
+      date,
+      method,
+      notes,
+    });
+
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Group not found' });
+    }
+
+    res.status(201).json({ success: true, group: result.group, settlement: result.settlement });
+  } catch (error) {
+    console.error('Error recording settlement:', error);
+    res.status(500).json({ success: false, error: 'Failed to record settlement' });
   }
 });
 

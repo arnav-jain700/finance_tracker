@@ -33,6 +33,12 @@ import {
   HandCoins,
   Search,
   Filter,
+  Share2,
+  Copy,
+  ExternalLink,
+  MessageCircle,
+  QrCode,
+  Eye,
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import {
@@ -53,6 +59,7 @@ interface BillsViewProps {
   onUpdateExpense?: (groupId: string, expense: BillExpense) => void;
   onDeleteExpense?: (groupId: string, expenseId: string) => void;
   onDeleteGroup?: (id: string) => void;
+  onOpenSharedPortal?: (groupId: string) => void;
 }
 
 const MEMBER_COLORS = ['#6366f1', '#06b6d4', '#f97316', '#10b981', '#ec4899', '#8b5cf6', '#eab308'];
@@ -74,6 +81,7 @@ export function BillsView({
   onUpdateExpense,
   onDeleteExpense,
   onDeleteGroup,
+  onOpenSharedPortal,
 }: BillsViewProps) {
   const [showGroupForm, setShowGroupForm] = useState(false);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
@@ -123,6 +131,11 @@ export function BillsView({
     totalOwedBase: number;
     amountGivenInput: string;
   } | null>(null);
+
+  // Live Share Modal state
+  const [showShareModalGroup, setShowShareModalGroup] = useState<BillGroup | null>(null);
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [copiedShareSummary, setCopiedShareSummary] = useState(false);
 
   const activeGroupData = billGroups.find((g) => g.id === activeGroup);
 
@@ -982,10 +995,30 @@ export function BillsView({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <button
+                    onClick={() => setShowShareModalGroup(group)}
+                    className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                    title="Share Live Real-Time Split Link with Members"
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span className="hidden sm:inline">Share Link</span>
+                  </button>
+
+                  {onOpenSharedPortal && (
+                    <button
+                      onClick={() => onOpenSharedPortal(group.id)}
+                      className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-750 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      title="Open Live Member Portal"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                      <span className="hidden sm:inline">Live View</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => openExpenseForm(group.id)}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1 shadow-sm transition-all active:scale-95"
+                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1 shadow-sm transition-all active:scale-95 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add Bill</span>
@@ -995,7 +1028,7 @@ export function BillsView({
                       onClick={() => {
                         if (window.confirm(`Delete split group "${group.name}"?`)) onDeleteGroup(group.id);
                       }}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                       title="Delete group"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -1998,6 +2031,110 @@ export function BillsView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Real-Time Live Share & Portal Modal */}
+      {showShareModalGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+            <div className="p-5 sm:p-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
+              <h3 className="text-xl font-bold font-heading text-slate-900 dark:text-white flex items-center gap-2">
+                <Share2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                Live Bill Split Portal
+              </h3>
+              <button
+                onClick={() => setShowShareModalGroup(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+              <div className="p-3.5 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/60 dark:border-indigo-800/50 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-indigo-900 dark:text-indigo-200">{showShareModalGroup.name}</p>
+                  <p className="text-[11px] text-indigo-700 dark:text-indigo-400">
+                    {showShareModalGroup.members.length} members • {showShareModalGroup.expenses.length} bills
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Synced
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                Share this link with your friends in this group. They can open it on their phones to track transactions, check their pending balances, and record payments in real time!
+              </p>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                  Shareable Live Link
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${typeof window !== 'undefined' ? window.location.origin : ''}?splitGroup=${showShareModalGroup.id}`}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white select-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator.clipboard) {
+                        navigator.clipboard.writeText(`${window.location.origin}?splitGroup=${showShareModalGroup.id}`);
+                        setCopiedShareLink(true);
+                        setTimeout(() => setCopiedShareLink(false), 2000);
+                      }
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                  >
+                    {copiedShareLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiedShareLink ? 'Copied!' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 pt-2">
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(`Check out our bill split for *${showShareModalGroup.name}* in real time:\n${typeof window !== 'undefined' ? window.location.origin : ''}?splitGroup=${showShareModalGroup.id}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 text-xs font-bold flex items-center justify-center gap-2 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Share on WhatsApp</span>
+                </a>
+
+                {onOpenSharedPortal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const gid = showShareModalGroup.id;
+                      setShowShareModalGroup(null);
+                      onOpenSharedPortal(gid);
+                    }}
+                    className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 text-indigo-700 dark:text-indigo-400 text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all cursor-pointer"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Open Live Portal</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowShareModalGroup(null)}
+                className="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-white text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

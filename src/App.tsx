@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Layout, LockScreen } from './components';
+import { Layout, LockScreen, SharedBillPortal } from './components';
 import { OnboardingWelcome } from './components/OnboardingWelcome';
 import {
   initStorage,
@@ -33,6 +33,13 @@ const DEFAULT_USERS: UserProfile[] = [];
 
 function App() {
   const [view, setView] = useState<ViewMode>('dashboard');
+  const [sharedGroupId, setSharedGroupId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('splitGroup') || params.get('shareGroup') || params.get('group') || null;
+    }
+    return null;
+  });
   const [users, setUsers] = useState<UserProfile[]>(() => {
     try {
       const saved = localStorage.getItem('users_list');
@@ -625,6 +632,24 @@ function App() {
     resetData();
   };
 
+  if (sharedGroupId) {
+    return (
+      <SharedBillPortal
+        groupId={sharedGroupId}
+        onExitPortal={() => {
+          setSharedGroupId(null);
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('splitGroup');
+            url.searchParams.delete('shareGroup');
+            url.searchParams.delete('group');
+            window.history.replaceState({}, '', url.pathname);
+          }
+        }}
+      />
+    );
+  }
+
   if (!initialized) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -689,6 +714,7 @@ function App() {
         onUpdateSubscription={updateSubscription}
         onDeleteSubscription={deleteSubscription}
         onSubscriptionPayment={logSubscriptionPayment}
+        onOpenSharedPortal={(gid) => setSharedGroupId(gid)}
         onLockWorkspace={() => setIsLocked(true)}
         onResetData={resetData}
         onLoadDemoData={loadDemoData}

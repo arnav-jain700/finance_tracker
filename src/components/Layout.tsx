@@ -124,6 +124,7 @@ interface LayoutProps {
   onLockWorkspace: () => void;
   onResetData: () => void;
   onLoadDemoData: () => void;
+  onOpenSharedPortal?: (groupId: string) => void;
 }
 
 export function Layout({
@@ -174,6 +175,7 @@ export function Layout({
   onLockWorkspace,
   onResetData,
   onLoadDemoData,
+  onOpenSharedPortal,
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showGlobalAddModal, setShowGlobalAddModal] = useState(false);
@@ -617,6 +619,7 @@ export function Layout({
               onAddExpense={onAddBillExpense}
               onUpdateExpense={onUpdateBillExpense}
               onDeleteExpense={onDeleteBillExpense}
+              onOpenSharedPortal={onOpenSharedPortal}
             />
           )}
           {currentView === 'insights' && (

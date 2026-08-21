@@ -15,3 +15,4 @@ export { UserSwitcherModal } from './UserSwitcherModal';
 export { LockScreen } from './LockScreen';
 export { CsvImportModal } from './CsvImportModal';
 export { CategoryIcon, CategoryBadge } from './CategoryIcon';
+export { SharedBillPortal } from './SharedBillPortal';
