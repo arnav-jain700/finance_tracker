@@ -82,7 +82,8 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
 
-  // Add Expense form states
+  // Add Expense / Transfer form states
+  const [entryTab, setEntryTab] = useState<'bill' | 'transfer'>('bill');
   const [newDesc, setNewDesc] = useState('');
   const [newTotal, setNewTotal] = useState('');
   const [newPaidBy, setNewPaidBy] = useState('');
@@ -90,6 +91,17 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
   const [newSplitMode, setNewSplitMode] = useState<'equal' | 'custom'>('equal');
   const [customShares, setCustomShares] = useState<Record<string, string>>({});
+
+  // Direct Transfer / Payment form states
+  const [transferFrom, setTransferFrom] = useState('');
+  const [transferTo, setTransferTo] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferDate, setTransferDate] = useState(new Date().toISOString().split('T')[0]);
+  const [transferMethod, setTransferMethod] = useState<'UPI' | 'Cash' | 'Bank Transfer' | 'Other'>('UPI');
+  const [transferNotes, setTransferNotes] = useState('');
+
+  // Ledger Filter states
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState<'all' | 'bills' | 'transfers'>('all');
 
   // Settle modal states
   const [settleMethod, setSettleMethod] = useState<'UPI' | 'Cash' | 'Bank Transfer' | 'Other'>('UPI');
@@ -228,10 +240,35 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
       .reduce((sum, e) => sum + e.totalAmount, 0);
   }, [group]);
 
+  // Helper to identify direct transfers
+  const isTransferExpense = (exp: BillExpense) => {
+    return exp.description.startsWith('🤝 Settlement:') || exp.description.startsWith('💸 Payment:');
+  };
+
+  // Open modal helper
+  const openAddExpenseModal = (tab: 'bill' | 'transfer' = 'bill') => {
+    if (!group || group.members.length === 0) return;
+    setEntryTab(tab);
+    const defaultPayer = selectedMember !== 'all' ? selectedMember : group.members[0];
+    const defaultTo = group.members.find((m) => m !== defaultPayer) || group.members[0];
+    setNewPaidBy(defaultPayer);
+    setTransferFrom(defaultPayer);
+    setTransferTo(defaultTo);
+    setShowAddExpense(true);
+  };
+
   // Filtered expenses
   const filteredExpenses = useMemo(() => {
     if (!group) return [];
     return group.expenses.filter((exp) => {
+      const isTransfer = isTransferExpense(exp);
+      let matchesType = true;
+      if (transactionTypeFilter === 'transfers') {
+        matchesType = isTransfer;
+      } else if (transactionTypeFilter === 'bills') {
+        matchesType = !isTransfer;
+      }
+
       const matchesSearch =
         exp.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         exp.paidBy.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -251,9 +288,9 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
           (exp.members && exp.members.some((m: BillMember) => m.name === selectedMember && (m.shareAmount > 0 || m.paidAmount > 0)));
       }
 
-      return matchesSearch && matchesMember && matchesPersona;
+      return matchesType && matchesSearch && matchesMember && matchesPersona;
     });
-  }, [group, searchQuery, filterMember, selectedMember]);
+  }, [group, searchQuery, filterMember, selectedMember, transactionTypeFilter]);
 
   // Handle Add Expense
   const handleCreateExpense = async (e: React.FormEvent) => {
@@ -302,6 +339,34 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
       setNewDesc('');
       setNewTotal('');
       setCustomShares({});
+    }
+    setSubmittingAction(false);
+  };
+
+  // Handle Direct Transfer / Payment between members
+  const handleRecordDirectTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!group || !transferAmount || Number(transferAmount) <= 0 || !transferFrom || !transferTo || transferFrom === transferTo) return;
+
+    setSubmittingAction(true);
+    const rawAmt = Number(transferAmount);
+    const baseAmt = toBaseCurrency(rawAmt, currency);
+
+    const res = await apiClient.recordSharedSettlement(group.id, {
+      from: transferFrom,
+      to: transferTo,
+      amount: baseAmt,
+      method: transferMethod,
+      notes: transferNotes.trim() || undefined,
+    });
+
+    if (res && res.group) {
+      setGroup(res.group);
+      groupVersionRef.current = res.group.version || 1;
+      soundFx.playCelebration();
+      setShowAddExpense(false);
+      setTransferAmount('');
+      setTransferNotes('');
     }
     setSubmittingAction(false);
   };
@@ -477,7 +542,16 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
           </button>
 
           <button
-            onClick={() => setShowAddExpense(true)}
+            onClick={() => openAddExpenseModal('transfer')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all cursor-pointer active:scale-95"
+            title="Record who gave money directly to whom"
+          >
+            <HandCoins className="w-3.5 h-3.5" />
+            <span>Record Payment</span>
+          </button>
+
+          <button
+            onClick={() => openAddExpenseModal('bill')}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer active:scale-95"
           >
             <UserPlus className="w-3.5 h-3.5" />
@@ -891,26 +965,60 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
 
         {/* Live Transaction Ledger */}
         <div className="bg-slate-800/60 border border-slate-700/70 rounded-3xl p-5 sm:p-6 shadow-lg space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-700/80">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-700/80">
             <div>
               <h3 className="text-base font-bold font-heading text-white flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-indigo-400" />
                 Live Transactions Ledger ({filteredExpenses.length})
               </h3>
               <p className="text-xs text-slate-400">
-                Itemized breakdown of all split expenses and logged settlements
+                Itemized breakdown of all split expenses and direct member payments
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Type Filter Pills */}
+              <div className="flex bg-slate-900/80 p-0.5 rounded-xl border border-slate-700 text-xs">
+                <button
+                  onClick={() => setTransactionTypeFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    transactionTypeFilter === 'all'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  All ({group.expenses.length})
+                </button>
+                <button
+                  onClick={() => setTransactionTypeFilter('bills')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    transactionTypeFilter === 'bills'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  🧾 Bills ({group.expenses.filter((e) => !isTransferExpense(e)).length})
+                </button>
+                <button
+                  onClick={() => setTransactionTypeFilter('transfers')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    transactionTypeFilter === 'transfers'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  💸 Payments ({group.expenses.filter((e) => isTransferExpense(e)).length})
+                </button>
+              </div>
+
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search bills..."
-                  className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-700 bg-slate-900/80 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 w-36 sm:w-44"
+                  placeholder="Search..."
+                  className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-700 bg-slate-900/80 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 w-32 sm:w-36"
                 />
               </div>
 
@@ -932,13 +1040,13 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
           {filteredExpenses.length === 0 ? (
             <div className="p-8 text-center text-slate-400">
               <Receipt className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-              <p className="font-semibold text-sm">No transactions match your search</p>
-              <p className="text-xs text-slate-500 mt-0.5">Add a new bill split to get started</p>
+              <p className="font-semibold text-sm">No transactions match your search or filter</p>
+              <p className="text-xs text-slate-500 mt-0.5">Record a bill or payment to get started</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-800 space-y-1">
               {filteredExpenses.map((exp) => {
-                const isSettlement = exp.description.startsWith('🤝 Settlement:');
+                const isTransfer = isTransferExpense(exp);
                 const isExpanded = expandedExpenseId === exp.id;
 
                 return (
@@ -953,16 +1061,23 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
                       <div className="flex items-center gap-3 min-w-0">
                         <div
                           className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                            isSettlement
+                            isTransfer
                               ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                               : 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
                           }`}
                         >
-                          {isSettlement ? <HandCoins className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
+                          {isTransfer ? <HandCoins className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
                         </div>
 
                         <div className="min-w-0">
-                          <p className="font-bold text-sm text-white truncate">{exp.description}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-sm text-white truncate">{exp.description}</p>
+                            {isTransfer && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                💸 Direct Payment
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-slate-400 mt-0.5">
                             Paid by <strong className="text-slate-300">{exp.paidBy}</strong> • {exp.date}
                           </p>
@@ -971,11 +1086,11 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
 
                       <div className="flex items-center gap-3 shrink-0">
                         <div className="text-right">
-                          <p className="font-extrabold font-mono text-sm sm:text-base text-white">
+                          <p className={`font-extrabold font-mono text-sm sm:text-base ${isTransfer ? 'text-emerald-400' : 'text-white'}`}>
                             {formatCurrency(exp.totalAmount, currency)}
                           </p>
                           <p className="text-[10px] text-slate-400">
-                            {exp.members?.filter((m: BillMember) => m.shareAmount > 0).length || group.members.length} shares
+                            {isTransfer ? '1:1 Transfer' : `${exp.members?.filter((m: BillMember) => m.shareAmount > 0).length || group.members.length} shares`}
                           </p>
                         </div>
                         <button className="text-slate-500 hover:text-slate-300">
@@ -1008,15 +1123,31 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
         </div>
       </main>
 
-      {/* Add Shared Bill Expense Modal */}
+      {/* Add Shared Bill Expense / Direct Payment Modal */}
       {showAddExpense && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col border border-slate-700 bg-slate-900 overflow-hidden text-white">
             <div className="p-5 sm:p-6 pb-4 border-b border-slate-800 flex items-center justify-between shrink-0 bg-slate-900">
-              <h3 className="text-xl font-bold font-heading text-white flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-indigo-400" />
-                Add Shared Bill
-              </h3>
+              <div>
+                <h3 className="text-xl font-bold font-heading text-white flex items-center gap-2">
+                  {entryTab === 'transfer' ? (
+                    <>
+                      <HandCoins className="w-5 h-5 text-emerald-400" />
+                      <span>Record Payment</span>
+                    </>
+                  ) : (
+                    <>
+                      <Receipt className="w-5 h-5 text-indigo-400" />
+                      <span>Add Shared Bill</span>
+                    </>
+                  )}
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {entryTab === 'transfer'
+                    ? 'Track who gave money directly to whom (settlements & transfers)'
+                    : 'Split dinner, rent, or groceries among group members'}
+                </p>
+              </div>
               <button
                 onClick={() => setShowAddExpense(false)}
                 className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 cursor-pointer"
@@ -1025,172 +1156,355 @@ export function SharedBillPortal({ groupId, onExitPortal }: SharedBillPortalProp
               </button>
             </div>
 
-            <form onSubmit={handleCreateExpense} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                    Description
-                  </label>
-                  <input
-                    type="text"
-                    value={newDesc}
-                    onChange={(e) => setNewDesc(e.target.value)}
-                    placeholder="e.g., Dinner at Olive Garden, Groceries"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3.5">
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                      Total Amount ({currency})
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      value={newTotal}
-                      onChange={(e) => setNewTotal(e.target.value)}
-                      placeholder="0"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                      Paid By
-                    </label>
-                    <select
-                      value={newPaidBy}
-                      onChange={(e) => setNewPaidBy(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      {group.members.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3.5">
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                      Category
-                    </label>
-                    <select
-                      value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="Food & Dining">Food & Dining</option>
-                      <option value="Transport">Transport</option>
-                      <option value="Housing">Housing / Rent</option>
-                      <option value="Entertainment">Entertainment</option>
-                      <option value="Utilities">Utilities</option>
-                      <option value="Shopping">Shopping</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                      Date
-                    </label>
-                    <input
-                      type="date"
-                      value={newDate}
-                      onChange={(e) => setNewDate(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Split Configuration */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      Split Calculation
-                    </label>
-                    <div className="flex rounded-lg bg-slate-800 p-0.5 border border-slate-700">
-                      <button
-                        type="button"
-                        onClick={() => setNewSplitMode('equal')}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
-                          newSplitMode === 'equal' ? 'bg-indigo-600 text-white' : 'text-slate-400'
-                        }`}
-                      >
-                        Split Equally
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNewSplitMode('custom')}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
-                          newSplitMode === 'custom' ? 'bg-indigo-600 text-white' : 'text-slate-400'
-                        }`}
-                      >
-                        Custom Shares
-                      </button>
-                    </div>
-                  </div>
-
-                  {newSplitMode === 'equal' ? (
-                    <div className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700/80 text-xs text-slate-300">
-                      Split equally among all {group.members.length} members (
-                      {newTotal && Number(newTotal) > 0
-                        ? formatCurrency(toBaseCurrency(Number(newTotal) / group.members.length, currency), currency)
-                        : '$0'}
-                      /person)
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-48 overflow-y-auto p-1">
-                      {group.members.map((m) => (
-                        <div key={m} className="flex items-center justify-between gap-3 text-xs">
-                          <span className="font-semibold text-slate-300 truncate">{m}</span>
-                          <div className="w-28 relative">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={customShares[m] || ''}
-                              onChange={(e) =>
-                                setCustomShares({
-                                  ...customShares,
-                                  [m]: e.target.value,
-                                })
-                              }
-                              placeholder="0"
-                              className="w-full px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-xs font-mono font-bold text-white text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="p-4 px-6 border-t border-slate-800 bg-slate-900 flex gap-3 shrink-0">
+            {/* Modal Top Tab Switcher */}
+            <div className="px-5 sm:px-6 pt-4 shrink-0 bg-slate-900">
+              <div className="flex bg-slate-800/90 p-1 rounded-2xl border border-slate-700">
                 <button
                   type="button"
-                  onClick={() => setShowAddExpense(false)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-sm font-semibold hover:bg-slate-800 cursor-pointer"
+                  onClick={() => setEntryTab('bill')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    entryTab === 'bill'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
                 >
-                  Cancel
+                  <Receipt className="w-4 h-4" />
+                  <span>🧾 Split a Bill</span>
                 </button>
                 <button
-                  type="submit"
-                  disabled={submittingAction}
-                  className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-md shadow-indigo-500/20 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                  type="button"
+                  onClick={() => setEntryTab('transfer')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    entryTab === 'transfer'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
                 >
-                  {submittingAction ? 'Saving...' : 'Add Bill Split'}
+                  <HandCoins className="w-4 h-4" />
+                  <span>💸 Who Gave Money to Whom</span>
                 </button>
               </div>
-            </form>
+            </div>
+
+            {entryTab === 'transfer' ? (
+              /* Dedicated Direct Transfer Form */
+              <form onSubmit={handleRecordDirectTransfer} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                  {/* Sender & Receiver Selectors */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Who Gave Money? (Payer)
+                      </label>
+                      <select
+                        value={transferFrom}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setTransferFrom(val);
+                          if (val === transferTo) {
+                            setTransferTo(group.members.find((m) => m !== val) || group.members[0]);
+                          }
+                        }}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                        required
+                      >
+                        {group.members.map((m) => (
+                          <option key={m} value={m}>
+                            {m} {selectedMember === m ? '(You)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Who Received Money? (Recipient)
+                      </label>
+                      <select
+                        value={transferTo}
+                        onChange={(e) => setTransferTo(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                        required
+                      >
+                        {group.members
+                          .filter((m) => m !== transferFrom)
+                          .map((m) => (
+                            <option key={m} value={m}>
+                              {m} {selectedMember === m ? '(You)' : ''}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Amount & Date */}
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Amount Given ({currency})
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={transferAmount}
+                        onChange={(e) => setTransferAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-base font-extrabold text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                        required
+                        autoFocus
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Date
+                      </label>
+                      <input
+                        type="date"
+                        value={transferDate}
+                        onChange={(e) => setTransferDate(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Payment Method & Notes */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Payment Method
+                      </label>
+                      <select
+                        value={transferMethod}
+                        onChange={(e) => setTransferMethod(e.target.value as any)}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                      >
+                        <option value="UPI">📱 UPI (GPay / PhonePe / Paytm)</option>
+                        <option value="Cash">💵 Cash Handover</option>
+                        <option value="Bank Transfer">🏦 Bank Transfer / NEFT / IMPS</option>
+                        <option value="Other">💳 Other / PayPal / Venmo</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Notes / Reason (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={transferNotes}
+                        onChange={(e) => setTransferNotes(e.target.value)}
+                        placeholder="e.g., Settled yesterday's trip share"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Live Impact Preview */}
+                  <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-800/60 space-y-1.5">
+                    <p className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      Live Balance Impact
+                    </p>
+                    <p className="text-xs text-slate-200">
+                      <strong>{transferFrom}</strong> gave <span className="font-mono text-emerald-400 font-bold">{formatCurrency(toBaseCurrency(Number(transferAmount) || 0, currency), currency)}</span> to <strong>{transferTo}</strong>
+                    </p>
+                    <div className="text-[11px] text-emerald-400/90 space-y-0.5 pt-1 border-t border-emerald-800/40">
+                      <p>• {transferFrom}'s positive balance increases</p>
+                      <p>• {transferTo}'s debt to {transferFrom} is cleared</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 px-6 border-t border-slate-800 bg-slate-900 flex gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddExpense(false)}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-sm font-semibold hover:bg-slate-800 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingAction || !transferAmount || Number(transferAmount) <= 0 || !transferFrom || !transferTo || transferFrom === transferTo}
+                    className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <HandCoins className="w-4 h-4" />
+                    <span>{submittingAction ? 'Recording...' : `Record Payment (${transferFrom} ➡️ ${transferTo})`}</span>
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* Standard Shared Bill Split Form */
+              <form onSubmit={handleCreateExpense} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                      Description
+                    </label>
+                    <input
+                      type="text"
+                      value={newDesc}
+                      onChange={(e) => setNewDesc(e.target.value)}
+                      placeholder="e.g., Dinner at Olive Garden, Groceries"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      required
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Total Amount ({currency})
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={newTotal}
+                        onChange={(e) => setNewTotal(e.target.value)}
+                        placeholder="0"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Paid By
+                      </label>
+                      <select
+                        value={newPaidBy}
+                        onChange={(e) => setNewPaidBy(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        {group.members.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Category
+                      </label>
+                      <select
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="Food & Dining">Food & Dining</option>
+                        <option value="Transport">Transport</option>
+                        <option value="Housing">Housing / Rent</option>
+                        <option value="Entertainment">Entertainment</option>
+                        <option value="Utilities">Utilities</option>
+                        <option value="Shopping">Shopping</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                        Date
+                      </label>
+                      <input
+                        type="date"
+                        value={newDate}
+                        onChange={(e) => setNewDate(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Split Configuration */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        Split Calculation
+                      </label>
+                      <div className="flex rounded-lg bg-slate-800 p-0.5 border border-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => setNewSplitMode('equal')}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                            newSplitMode === 'equal' ? 'bg-indigo-600 text-white' : 'text-slate-400'
+                          }`}
+                        >
+                          Split Equally
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewSplitMode('custom')}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                            newSplitMode === 'custom' ? 'bg-indigo-600 text-white' : 'text-slate-400'
+                          }`}
+                        >
+                          Custom Shares
+                        </button>
+                      </div>
+                    </div>
+
+                    {newSplitMode === 'equal' ? (
+                      <div className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700/80 text-xs text-slate-300">
+                        Split equally among all {group.members.length} members (
+                        {newTotal && Number(newTotal) > 0
+                          ? formatCurrency(toBaseCurrency(Number(newTotal) / group.members.length, currency), currency)
+                          : '$0'}
+                        /person)
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto p-1">
+                        {group.members.map((m) => (
+                          <div key={m} className="flex items-center justify-between gap-3 text-xs">
+                            <span className="font-semibold text-slate-300 truncate">{m}</span>
+                            <div className="w-28 relative">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={customShares[m] || ''}
+                                onChange={(e) =>
+                                  setCustomShares({
+                                    ...customShares,
+                                    [m]: e.target.value,
+                                  })
+                                }
+                                placeholder="0"
+                                className="w-full px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-xs font-mono font-bold text-white text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-4 px-6 border-t border-slate-800 bg-slate-900 flex gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddExpense(false)}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-sm font-semibold hover:bg-slate-800 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingAction}
+                    className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-md shadow-indigo-500/20 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {submittingAction ? 'Saving...' : 'Add Bill Split'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

@@ -119,6 +119,18 @@ export function BillsView({
   const [customPayerAmounts, setCustomPayerAmounts] = useState<Record<string, string>>({});
   const [editingExpense, setEditingExpense] = useState<{ groupId: string; expense: BillExpense } | null>(null);
 
+  // Direct Transfer ("Who Gave Money to Whom") Mode States
+  const [entryTab, setEntryTab] = useState<'bill' | 'transfer'>('bill');
+  const [transferFrom, setTransferFrom] = useState('');
+  const [transferTo, setTransferTo] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferDate, setTransferDate] = useState(new Date().toISOString().split('T')[0]);
+  const [transferMethod, setTransferMethod] = useState<'UPI' | 'Cash' | 'Bank Transfer' | 'Other'>('UPI');
+  const [transferNotes, setTransferNotes] = useState('');
+
+  // Transaction Ledger Type Filter
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState<'all' | 'bills' | 'transfers'>('all');
+
   // Auto-balancer states: track which tabs/payers were manually edited by the user
   const [manuallyEditedMembers, setManuallyEditedMembers] = useState<string[]>([]);
   const [manuallyEditedPayers, setManuallyEditedPayers] = useState<string[]>([]);
@@ -156,11 +168,12 @@ export function BillsView({
     setShowGroupForm(false);
   };
 
-  const openExpenseForm = (groupId: string) => {
+  const openExpenseForm = (groupId: string, initialTab: 'bill' | 'transfer' = 'bill') => {
     const group = billGroups.find((g) => g.id === groupId);
     if (!group) return;
     setActiveGroup(groupId);
     setEditingExpense(null);
+    setEntryTab(initialTab);
     setExpenseData({
       description: '',
       totalAmount: '',
@@ -175,7 +188,26 @@ export function BillsView({
     setCustomPercentages({});
     setManuallyEditedMembers([]);
     setManuallyEditedPayers([]);
+
+    // Set transfer defaults
+    setTransferFrom(group.members[0] || 'You');
+    setTransferTo(group.members.find((m) => m !== group.members[0]) || group.members[0] || 'You');
+    setTransferAmount('');
+    setTransferDate(new Date().toISOString().split('T')[0]);
+    setTransferMethod('UPI');
+    setTransferNotes('');
+
     setShowExpenseForm(true);
+  };
+
+  const isTransferExpense = (exp: BillExpense) => {
+    return (
+      exp.description.startsWith('💸 Direct Payment') ||
+      exp.description.startsWith('Payment:') ||
+      exp.description.startsWith('🤝 Settlement:') ||
+      exp.description.startsWith('Debt Settlement') ||
+      exp.category === 'Transfer / Settlement'
+    );
   };
 
   const handleOpenEditExpense = (groupId: string, exp: BillExpense) => {
@@ -185,55 +217,75 @@ export function BillsView({
     setActiveGroup(groupId);
     setEditingExpense({ groupId, expense: exp });
 
-    const totalRaw = fromBaseCurrency(exp.totalAmount, currency);
-    setExpenseData({
-      description: exp.description,
-      totalAmount: formatNumForInput(totalRaw),
-      paidBy: exp.paidBy.replace(' (Multi-payer)', ''),
-      date: exp.date,
-    });
+    const isTransfer = isTransferExpense(exp);
+    if (isTransfer) {
+      setEntryTab('transfer');
+      const totalRaw = fromBaseCurrency(exp.totalAmount, currency);
+      setTransferAmount(formatNumForInput(totalRaw));
+      setTransferDate(exp.date);
+      const payer = exp.members.find((m) => m.paidAmount > 0.001)?.name || exp.paidBy || group.members[0];
+      const receiver = exp.members.find((m) => m.shareAmount > 0.001)?.name || group.members.find((m) => m !== payer) || group.members[0];
+      setTransferFrom(payer);
+      setTransferTo(receiver);
 
-    // Check payers
-    const payersWithAmount = exp.members.filter((m) => m.paidAmount > 0.001);
-    if (payersWithAmount.length > 1) {
-      setPayerMode('multiple');
-      const payerMap: Record<string, string> = {};
-      group.members.forEach((m) => {
-        const found = exp.members.find((item) => item.name === m);
-        payerMap[m] = found ? formatNumForInput(fromBaseCurrency(found.paidAmount, currency)) : '0';
-      });
-      setCustomPayerAmounts(payerMap);
+      if (exp.description.includes('(via Cash)')) setTransferMethod('Cash');
+      else if (exp.description.includes('(via Bank Transfer)')) setTransferMethod('Bank Transfer');
+      else if (exp.description.includes('(via Other)')) setTransferMethod('Other');
+      else setTransferMethod('UPI');
+
+      const notesMatch = exp.description.split(' - ');
+      setTransferNotes(notesMatch.length > 1 ? notesMatch.slice(1).join(' - ') : '');
     } else {
-      setPayerMode('single');
-      setCustomPayerAmounts({});
+      setEntryTab('bill');
+      const totalRaw = fromBaseCurrency(exp.totalAmount, currency);
+      setExpenseData({
+        description: exp.description,
+        totalAmount: formatNumForInput(totalRaw),
+        paidBy: exp.paidBy.replace(' (Multi-payer)', ''),
+        date: exp.date,
+      });
+
+      // Check payers
+      const payersWithAmount = exp.members.filter((m) => m.paidAmount > 0.001);
+      if (payersWithAmount.length > 1) {
+        setPayerMode('multiple');
+        const payerMap: Record<string, string> = {};
+        group.members.forEach((m) => {
+          const found = exp.members.find((item) => item.name === m);
+          payerMap[m] = found ? formatNumForInput(fromBaseCurrency(found.paidAmount, currency)) : '0';
+        });
+        setCustomPayerAmounts(payerMap);
+      } else {
+        setPayerMode('single');
+        setCustomPayerAmounts({});
+      }
+
+      // Check split members & shares
+      const membersWithShare = exp.members.filter((m) => m.shareAmount > 0.001);
+      const activeMembers = membersWithShare.map((m) => m.name);
+      setSplitAmong(activeMembers.length > 0 ? activeMembers : [...group.members]);
+
+      // Check if equal split or custom
+      const shares = membersWithShare.map((m) => fromBaseCurrency(m.shareAmount, currency));
+      const firstShare = shares[0] || 0;
+      const isEquallySplit = shares.length > 0 && shares.every((s) => Math.abs(s - firstShare) < 0.05);
+
+      if (isEquallySplit) {
+        setSplitMode('equal');
+        setCustomAmounts({});
+        setCustomPercentages({});
+      } else {
+        setSplitMode('custom');
+        const amountMap: Record<string, string> = {};
+        membersWithShare.forEach((m) => {
+          amountMap[m.name] = formatNumForInput(fromBaseCurrency(m.shareAmount, currency));
+        });
+        setCustomAmounts(amountMap);
+      }
     }
 
-    // Check split members & shares
-    const membersWithShare = exp.members.filter((m) => m.shareAmount > 0.001);
-    const activeMembers = membersWithShare.map((m) => m.name);
-    setSplitAmong(activeMembers.length > 0 ? activeMembers : [...group.members]);
-
-    // Check if equal split or custom
-    const shares = membersWithShare.map((m) => fromBaseCurrency(m.shareAmount, currency));
-    const firstShare = shares[0] || 0;
-    const isEquallySplit = shares.length > 0 && shares.every((s) => Math.abs(s - firstShare) < 0.05);
-
-    if (isEquallySplit && shares.length > 0) {
-      setSplitMode('equal');
-      setCustomAmounts({});
-      setCustomPercentages({});
-      setManuallyEditedMembers([]);
-    } else {
-      setSplitMode('custom');
-      const amountMap: Record<string, string> = {};
-      group.members.forEach((m) => {
-        const found = exp.members.find((item) => item.name === m);
-        amountMap[m] = found ? formatNumForInput(fromBaseCurrency(found.shareAmount, currency)) : '0';
-      });
-      setCustomAmounts(amountMap);
-      setManuallyEditedMembers(membersWithShare.map((m) => m.name));
-    }
-
+    setManuallyEditedMembers([]);
+    setManuallyEditedPayers([]);
     setShowExpenseForm(true);
   };
 
@@ -289,6 +341,58 @@ export function BillsView({
 
     soundFx.playCelebration();
     setSettleModal(null);
+  };
+
+  const handleRecordTransfer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeGroupData || !activeGroup) return;
+    if (!transferFrom || !transferTo || transferFrom === transferTo) {
+      alert('Please choose two different members for sender and recipient.');
+      return;
+    }
+    const rawAmt = Number(transferAmount);
+    if (!rawAmt || rawAmt <= 0) return;
+
+    const baseAmt = toBaseCurrency(rawAmt, currency);
+    const methodTag = transferMethod ? ` (via ${transferMethod})` : '';
+    const notesTag = transferNotes.trim() ? ` - ${transferNotes.trim()}` : '';
+    const description = `💸 Direct Payment: ${transferFrom} paid ${formatRawCurrency(rawAmt, currency)} to ${transferTo}${methodTag}${notesTag}`;
+
+    const allMembers: BillExpense['members'] = activeGroupData.members.map((name) => {
+      if (name === transferFrom) {
+        return { name, paidAmount: baseAmt, shareAmount: 0 };
+      }
+      if (name === transferTo) {
+        return { name, paidAmount: 0, shareAmount: baseAmt };
+      }
+      return { name, paidAmount: 0, shareAmount: 0 };
+    });
+
+    if (editingExpense) {
+      onUpdateExpense?.(activeGroup, {
+        ...editingExpense.expense,
+        description,
+        totalAmount: baseAmt,
+        paidBy: transferFrom,
+        members: allMembers,
+        date: transferDate,
+        category: 'Transfer / Settlement',
+      });
+    } else {
+      onAddExpense(activeGroup, {
+        description,
+        totalAmount: baseAmt,
+        paidBy: transferFrom,
+        members: allMembers,
+        date: transferDate,
+        category: 'Transfer / Settlement',
+      });
+    }
+
+    soundFx.playCelebration();
+    setShowExpenseForm(false);
+    setEditingExpense(null);
+    setActiveGroup(null);
   };
 
   const computeMemberStats = (group: BillGroup) => {
@@ -687,7 +791,8 @@ export function BillsView({
     datePreset !== 'all' ||
     startDate !== '' ||
     endDate !== '' ||
-    memberFilter !== 'all';
+    memberFilter !== 'all' ||
+    transactionTypeFilter !== 'all';
 
   const clearAllFilters = () => {
     setSearchQuery('');
@@ -695,12 +800,16 @@ export function BillsView({
     setStartDate('');
     setEndDate('');
     setMemberFilter('all');
+    setTransactionTypeFilter('all');
   };
 
   const getFilteredExpenses = (expenses: BillExpense[]) => {
     const now = new Date();
     return expenses
       .filter((exp) => {
+        if (transactionTypeFilter === 'bills' && isTransferExpense(exp)) return false;
+        if (transactionTypeFilter === 'transfers' && !isTransferExpense(exp)) return false;
+
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
           const descMatch = exp.description.toLowerCase().includes(q);
@@ -1017,11 +1126,20 @@ export function BillsView({
                   )}
 
                   <button
-                    onClick={() => openExpenseForm(group.id)}
+                    onClick={() => openExpenseForm(group.id, 'bill')}
                     className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1 shadow-sm transition-all active:scale-95 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add Bill</span>
+                  </button>
+
+                  <button
+                    onClick={() => openExpenseForm(group.id, 'transfer')}
+                    className="px-2.5 sm:px-3 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                    title="Record Who Gave Money to Whom"
+                  >
+                    <HandCoins className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span className="hidden sm:inline">Record Payment</span>
                   </button>
                   {onDeleteGroup && (
                     <button
@@ -1183,54 +1301,68 @@ export function BillsView({
                           No bills match active search/filters
                         </div>
                       ) : (
-                        getFilteredExpenses(group.expenses).map((exp) => (
-                          <div
-                            key={exp.id}
-                            className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50 flex items-center justify-between text-xs group/item transition-all"
-                          >
-                            <div className="space-y-0.5">
-                              <div className="flex items-center gap-2">
-                                <p className="font-semibold text-slate-900 dark:text-white">{exp.description}</p>
-                                {exp.description.startsWith('Debt Settlement') && (
-                                  <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
-                                    Settled
-                                  </span>
-                                )}
+                        getFilteredExpenses(group.expenses).map((exp) => {
+                          const isTransfer = isTransferExpense(exp);
+                          return (
+                            <div
+                              key={exp.id}
+                              className={`p-3 rounded-2xl border flex items-center justify-between text-xs group/item transition-all ${
+                                isTransfer
+                                  ? 'bg-emerald-50/50 dark:bg-emerald-950/25 border-emerald-200/60 dark:border-emerald-800/40'
+                                  : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/50'
+                              }`}
+                            >
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {isTransfer && (
+                                    <span className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold flex items-center gap-1">
+                                      <HandCoins className="w-3 h-3" />
+                                      Direct Payment
+                                    </span>
+                                  )}
+                                  <p className="font-semibold text-slate-900 dark:text-white">{exp.description}</p>
+                                </div>
+                                <p className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
+                                  <span>Paid by <strong className="font-medium text-slate-700 dark:text-slate-300">{exp.paidBy}</strong></span>
+                                  <span>•</span>
+                                  <span>{exp.date}</span>
+                                </p>
                               </div>
-                              <p className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap">
-                                <span>Paid by <strong className="font-medium text-slate-700 dark:text-slate-300">{exp.paidBy}</strong></span>
-                                <span>•</span>
-                                <span>{exp.date}</span>
-                              </p>
-                            </div>
 
-                            <div className="flex items-center gap-2.5">
-                              <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
-                                {formatCurrency(exp.totalAmount, currency)}
-                              </span>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditExpense(group.id, exp)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition-colors"
-                                  title="Edit Expense, Payer & Split"
+                              <div className="flex items-center gap-2.5">
+                                <span
+                                  className={`font-mono font-bold text-sm ${
+                                    isTransfer
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-slate-900 dark:text-white'
+                                  }`}
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                {onDeleteExpense && (
+                                  {formatCurrency(exp.totalAmount, currency)}
+                                </span>
+                                <div className="flex items-center gap-1">
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteExpense(group.id, exp.id)}
-                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-slate-700 transition-colors"
-                                    title="Delete Expense"
+                                    onClick={() => handleOpenEditExpense(group.id, exp)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                                    title={isTransfer ? 'Edit Payment Details' : 'Edit Expense, Payer & Split'}
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <Edit2 className="w-3.5 h-3.5" />
                                   </button>
-                                )}
+                                  {onDeleteExpense && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteExpense(group.id, exp.id)}
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                                      title="Delete Record"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   )}
@@ -1358,10 +1490,18 @@ export function BillsView({
             <div className="p-5 sm:p-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <div>
                 <h3 className="text-xl font-bold font-heading text-slate-900 dark:text-white">
-                  {editingExpense ? 'Edit Bill & Payer Breakdown' : `Add Bill to ${activeGroupData.name}`}
+                  {editingExpense
+                    ? entryTab === 'transfer'
+                      ? 'Edit Direct Payment'
+                      : 'Edit Bill & Payer Breakdown'
+                    : entryTab === 'transfer'
+                    ? `Record Payment in ${activeGroupData.name}`
+                    : `Add Bill to ${activeGroupData.name}`}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {editingExpense
+                  {entryTab === 'transfer'
+                    ? 'Track who gave money directly to whom (settlements & payments)'
+                    : editingExpense
                     ? 'Modify who paid, payment shares, and individual split tabs'
                     : 'Record shared expense and distribute splits'}
                 </p>
@@ -1378,505 +1518,669 @@ export function BillsView({
               </button>
             </div>
 
-            <form onSubmit={handleAddExpense} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                    Description
-                  </label>
-                  <input
-                    type="text"
-                    value={expenseData.description}
-                    onChange={(e) => setExpenseData({ ...expenseData, description: e.target.value })}
-                    placeholder="e.g., Airbnb Cabin Booking, Dinner & Wine"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  />
+            {/* Top Tab Bar (Split a Bill vs Direct Payment) */}
+            {!editingExpense && (
+              <div className="px-5 sm:px-6 pt-4 shrink-0 bg-white dark:bg-slate-900">
+                <div className="flex bg-slate-100 dark:bg-slate-800/90 p-1 rounded-2xl border border-slate-200 dark:border-slate-700/80">
+                  <button
+                    type="button"
+                    onClick={() => setEntryTab('bill')}
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      entryTab === 'bill'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Receipt className="w-4 h-4" />
+                    <span>🧾 Split a Bill (Dinner, Rent, etc.)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEntryTab('transfer')}
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      entryTab === 'transfer'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <HandCoins className="w-4 h-4" />
+                    <span>💸 Who Gave Money to Whom</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {entryTab === 'transfer' ? (
+              /* Dedicated Direct Transfer Form */
+              <form onSubmit={handleRecordTransfer} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                  {/* Sender & Receiver Selectors */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                        Who Gave Money? (Payer)
+                      </label>
+                      <select
+                        value={transferFrom}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setTransferFrom(val);
+                          if (val === transferTo) {
+                            setTransferTo(activeGroupData.members.find((m) => m !== val) || activeGroupData.members[0]);
+                          }
+                        }}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                        required
+                      >
+                        {activeGroupData.members.map((m) => (
+                          <option key={m} value={m}>
+                            {m} {m === 'You' ? '(You)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                        Who Received Money? (Recipient)
+                      </label>
+                      <select
+                        value={transferTo}
+                        onChange={(e) => setTransferTo(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                        required
+                      >
+                        {activeGroupData.members
+                          .filter((m) => m !== transferFrom)
+                          .map((m) => (
+                            <option key={m} value={m}>
+                              {m} {m === 'You' ? '(You)' : ''}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Amount & Date */}
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                        Amount Given
+                      </label>
+                      <div className="relative flex items-center">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold font-mono text-slate-400 pointer-events-none select-none">
+                          {CURRENCY_MAP[currency]?.symbol || '$'}
+                        </span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={transferAmount}
+                          onChange={(e) => setTransferAmount(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                        Date
+                      </label>
+                      <input
+                        type="date"
+                        value={transferDate}
+                        onChange={(e) => setTransferDate(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Payment Method & Reference */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                        Payment Method
+                      </label>
+                      <select
+                        value={transferMethod}
+                        onChange={(e) => setTransferMethod(e.target.value as any)}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                      >
+                        <option value="UPI">📱 UPI (GPay / PhonePe / Paytm)</option>
+                        <option value="Cash">💵 Cash Handover</option>
+                        <option value="Bank Transfer">🏦 Bank Transfer / NEFT / IMPS</option>
+                        <option value="Other">💳 Other / PayPal / Venmo</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                        Notes / Reason (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={transferNotes}
+                        onChange={(e) => setTransferNotes(e.target.value)}
+                        placeholder="e.g., Settled yesterday's lunch"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Live Balance Impact Preview Box */}
+                  <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 space-y-2">
+                    <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      Live Balance Impact
+                    </p>
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-200">
+                        <span>{transferFrom}</span>
+                        <span className="text-emerald-500 font-normal">gave</span>
+                        <span className="font-mono text-emerald-600 dark:text-emerald-400">
+                          {formatRawCurrency(Number(transferAmount) || 0, currency)}
+                        </span>
+                        <span className="text-emerald-500 font-normal">to</span>
+                        <span>{transferTo}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-emerald-200/50 dark:border-emerald-800/40 text-[11px]">
+                      <p className="text-emerald-700 dark:text-emerald-300">
+                        • <strong>{transferFrom}</strong> balance increases by +{formatRawCurrency(Number(transferAmount) || 0, currency)}
+                      </p>
+                      <p className="text-emerald-700 dark:text-emerald-300">
+                        • <strong>{transferTo}</strong> debt reduces by -{formatRawCurrency(Number(transferAmount) || 0, currency)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                    Total Amount
-                  </label>
-                  <div className="relative flex items-center">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold font-mono text-slate-400 dark:text-slate-500 pointer-events-none select-none">
-                      {CURRENCY_MAP[currency]?.symbol || '$'}
-                    </span>
+                <div className="p-4 sm:p-5 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md flex gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowExpenseForm(false);
+                      setActiveGroup(null);
+                      setEditingExpense(null);
+                    }}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!transferAmount || Number(transferAmount) <= 0 || !transferFrom || !transferTo || transferFrom === transferTo}
+                    className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <HandCoins className="w-4 h-4" />
+                    <span>{editingExpense ? 'Update Payment Record' : `Record Payment (${transferFrom} ➡️ ${transferTo})`}</span>
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* Standard Shared Bill Split Form */
+              <form onSubmit={handleAddExpense} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                      Description
+                    </label>
                     <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      value={expenseData.totalAmount}
-                      onChange={(e) => handleTotalAmountChange(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      type="text"
+                      value={expenseData.description}
+                      onChange={(e) => setExpenseData({ ...expenseData, description: e.target.value })}
+                      placeholder="e.g., Airbnb Cabin Booking, Dinner & Wine"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       required
                     />
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                    Date
-                  </label>
-                  <input
-                    type="date"
-                    value={expenseData.date}
-                    onChange={(e) => setExpenseData({ ...expenseData, date: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  />
-                </div>
-              </div>
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                        Total Amount
+                      </label>
+                      <div className="relative flex items-center">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold font-mono text-slate-400 dark:text-slate-500 pointer-events-none select-none">
+                          {CURRENCY_MAP[currency]?.symbol || '$'}
+                        </span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={expenseData.totalAmount}
+                          onChange={(e) => handleTotalAmountChange(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          required
+                        />
+                      </div>
+                    </div>
 
-              {/* Paid By Section with Single vs Multi-Payer Strategy */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Who Paid?
-                  </label>
-                  <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <button
-                      type="button"
-                      onClick={() => handlePayerModeChange('single')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                        payerMode === 'single'
-                          ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      Single Payer
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handlePayerModeChange('multiple')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                        payerMode === 'multiple'
-                          ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      Multiple Payers
-                    </button>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                        Date
+                      </label>
+                      <input
+                        type="date"
+                        value={expenseData.date}
+                        onChange={(e) => setExpenseData({ ...expenseData, date: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        required
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {payerMode === 'single' ? (
-                  <select
-                    value={expenseData.paidBy}
-                    onChange={(e) => setExpenseData({ ...expenseData, paidBy: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  >
-                    {activeGroupData.members.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                ) : (
-                  /* Multiple Payers Configuration */
-                  <div className="space-y-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-                    {(() => {
-                      const total = Number(expenseData.totalAmount) || 0;
-                      const sumPaid = activeGroupData.members.reduce((acc, m) => acc + (Number(customPayerAmounts[m]) || 0), 0);
-                      const diff = Math.round((total - sumPaid) * 100) / 100;
-                      const isMatch = Math.abs(diff) < 0.01 && total > 0;
-                      const isUnder = diff > 0.01;
-                      const isOver = diff < -0.01;
+                  {/* Paid By Section with Single vs Multi-Payer Strategy */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Who Paid?
+                      </label>
+                      <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => handlePayerModeChange('single')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            payerMode === 'single'
+                              ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          Single Payer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePayerModeChange('multiple')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            payerMode === 'multiple'
+                              ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          Multiple Payers
+                        </button>
+                      </div>
+                    </div>
 
-                      return (
-                        <>
-                          <div className="flex items-center justify-between text-xs font-bold">
-                            <span className="text-slate-600 dark:text-slate-400">
-                              Total Paid: <span className="font-mono text-slate-900 dark:text-white">{formatRawCurrency(sumPaid, currency)}</span> of {formatRawCurrency(total, currency)}
-                            </span>
-                            {isMatch ? (
-                              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
-                                <CheckCircle2 className="w-3.5 h-3.5" /> 100% Covered
-                              </span>
-                            ) : isUnder ? (
-                              <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold">
-                                <AlertCircle className="w-3.5 h-3.5" /> {formatRawCurrency(diff, currency)} unpaid
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-bold">
-                                <AlertCircle className="w-3.5 h-3.5" /> Overpaid by {formatRawCurrency(Math.abs(diff), currency)}
-                              </span>
-                            )}
-                          </div>
+                    {payerMode === 'single' ? (
+                      <select
+                        value={expenseData.paidBy}
+                        onChange={(e) => setExpenseData({ ...expenseData, paidBy: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                        required
+                      >
+                        {activeGroupData.members.map((m) => (
+                          <option key={m} value={m}>
+                            {m} {m === 'You' ? '(You)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="space-y-2 p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80">
+                        {(() => {
+                          const total = Number(expenseData.totalAmount) || 0;
+                          const sumPaid = activeGroupData.members.reduce((acc, m) => acc + (Number(customPayerAmounts[m]) || 0), 0);
+                          const diff = Math.round((total - sumPaid) * 100) / 100;
+                          const isMatch = Math.abs(diff) < 0.01 && total > 0;
+                          const isUnder = diff > 0.01;
+                          const isOver = diff < -0.01;
 
-                          <div className="space-y-1.5 pt-1 max-h-36 overflow-y-auto pr-1">
-                            {activeGroupData.members.map((m, idx) => (
-                              <div
-                                key={m}
-                                className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 text-xs"
-                              >
-                                <div className="flex items-center gap-2">
+                          return (
+                            <>
+                              <div className="flex items-center justify-between text-xs font-bold">
+                                <span className="text-slate-600 dark:text-slate-400">
+                                  Total Paid: <span className="font-mono text-slate-900 dark:text-white">{formatRawCurrency(sumPaid, currency)}</span> of {formatRawCurrency(total, currency)}
+                                </span>
+                                {isMatch ? (
+                                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> 100% Covered
+                                  </span>
+                                ) : isUnder ? (
+                                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold">
+                                    <AlertCircle className="w-3.5 h-3.5" /> {formatRawCurrency(diff, currency)} unpaid
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-bold">
+                                    <AlertCircle className="w-3.5 h-3.5" /> Overpaid by {formatRawCurrency(Math.abs(diff), currency)}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="space-y-1.5 pt-1 max-h-36 overflow-y-auto pr-1">
+                                {activeGroupData.members.map((m, idx) => (
                                   <div
-                                    className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
-                                    style={{ backgroundColor: MEMBER_COLORS[idx % MEMBER_COLORS.length] }}
+                                    key={m}
+                                    className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 text-xs"
                                   >
-                                    {m.charAt(0).toUpperCase()}
+                                    <div className="flex items-center gap-2">
+                                      <div
+                                        className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
+                                        style={{ backgroundColor: MEMBER_COLORS[idx % MEMBER_COLORS.length] }}
+                                      >
+                                        {m.charAt(0).toUpperCase()}
+                                      </div>
+                                      <span className="font-semibold text-slate-900 dark:text-white">{m}</span>
+                                    </div>
+                                    <div className="relative flex items-center w-32">
+                                      <span className="absolute left-2.5 text-xs font-bold font-mono text-slate-400 pointer-events-none">
+                                        {CURRENCY_MAP[currency]?.symbol || '$'}
+                                      </span>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={customPayerAmounts[m] ?? ''}
+                                        onChange={(e) => handleCustomPayerAmountChange(m, e.target.value)}
+                                        placeholder="0.00"
+                                        className="w-full pl-7 pr-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right"
+                                      />
+                                    </div>
                                   </div>
-                                  <span className="font-semibold text-slate-900 dark:text-white">{m}</span>
-                                  {manuallyEditedPayers.includes(m) ? (
-                                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded">
-                                      Manual
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
-                                      Auto
-                                    </span>
+                                ))}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2 pt-1">
+                                {isUnder && (
+                                  <button
+                                    type="button"
+                                    onClick={handleDistributeRemainingPayer}
+                                    className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 text-[11px] font-bold border border-indigo-200 dark:border-indigo-800 transition-colors flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Zap className="w-3 h-3" /> Auto-Fill Remainder to Payer
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={handleEqualizePayers}
+                                  className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                                >
+                                  <RotateCcw className="w-3 h-3" /> Equalize Payments
+                                </button>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Split Strategy & Custom Tabs Selector */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Split Strategy
+                      </label>
+                      <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchSplitMode('equal')}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            splitMode === 'equal'
+                              ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <Equal className="w-3.5 h-3.5" />
+                          <span>Equal</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchSplitMode('custom')}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            splitMode === 'custom'
+                              ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5" />
+                          <span>Custom Tabs</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchSplitMode('percentages')}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            splitMode === 'percentages'
+                              ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <Percent className="w-3.5 h-3.5" />
+                          <span>% Pct</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Allocation Balance Banner (for Custom mode) */}
+                    {splitMode === 'custom' && (
+                      <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-2">
+                        {(() => {
+                          const total = Number(expenseData.totalAmount) || 0;
+                          const sumCustom = splitAmong.reduce((acc, m) => acc + (Number(customAmounts[m]) || 0), 0);
+                          const diff = Math.round((total - sumCustom) * 100) / 100;
+                          const isMatch = Math.abs(diff) < 0.01 && total > 0;
+                          const isUnder = diff > 0.01;
+                          const isOver = diff < -0.01;
+
+                          return (
+                            <>
+                              <div className="flex items-center justify-between text-xs font-bold">
+                                <span className="text-slate-600 dark:text-slate-400">
+                                  Allocated: <span className="font-mono text-slate-900 dark:text-white">{formatRawCurrency(sumCustom, currency)}</span> of {formatRawCurrency(total, currency)}
+                                </span>
+                                {isMatch && (
+                                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> 100% Balanced
+                                  </span>
+                                )}
+                                {isUnder && (
+                                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold">
+                                    <AlertCircle className="w-3.5 h-3.5" /> {formatRawCurrency(diff, currency)} unassigned
+                                  </span>
+                                )}
+                                {isOver && (
+                                  <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-bold">
+                                    <AlertCircle className="w-3.5 h-3.5" /> Over by {formatRawCurrency(Math.abs(diff), currency)}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2 pt-1">
+                                {isUnder && (
+                                  <button
+                                    type="button"
+                                    onClick={handleDistributeRemaining}
+                                    className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 text-[11px] font-bold border border-indigo-200 dark:border-indigo-800 transition-colors flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Zap className="w-3 h-3" /> Auto-Distribute Remainder
+                                  </button>
+                                )}
+                                {Math.abs(diff) > 0.01 && sumCustom > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={handleSyncTotalWithCustomSum}
+                                    className="px-2.5 py-1 rounded-lg bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 text-[11px] font-bold transition-colors cursor-pointer"
+                                  >
+                                    Update Total to {formatRawCurrency(sumCustom, currency)}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={handleEqualizeCustom}
+                                  className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                                >
+                                  <RotateCcw className="w-3 h-3" /> Equalize
+                                </button>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {splitMode === 'percentages' && (
+                      <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                        {(() => {
+                          const totalPct = splitAmong.reduce((acc, m) => acc + (Number(customPercentages[m]) || 0), 0);
+                          const is100 = Math.abs(totalPct - 100) < 0.1;
+
+                          return (
+                            <div className="flex items-center justify-between text-xs font-bold">
+                              <span className="text-slate-600 dark:text-slate-400">
+                                Total Percentage Assigned: <span className="font-mono text-slate-900 dark:text-white">{totalPct.toFixed(1)}%</span>
+                              </span>
+                              {is100 ? (
+                                <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                                  <CheckCircle2 className="w-3.5 h-3.5" /> 100% Assigned
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold">
+                                  <AlertCircle className="w-3.5 h-3.5" /> {(100 - totalPct).toFixed(1)}% remaining
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Member Allocation List */}
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {activeGroupData.members.map((m, idx) => {
+                        const isSelected = splitAmong.includes(m);
+                        const memberColor = MEMBER_COLORS[idx % MEMBER_COLORS.length];
+
+                        return (
+                          <div
+                            key={m}
+                            className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all ${
+                              isSelected
+                                ? 'bg-white/80 dark:bg-slate-800/90 border-indigo-200 dark:border-indigo-900/60 shadow-xs'
+                                : 'bg-slate-50/50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-800 opacity-60'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSplitMember(m)}
+                                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              />
+                              <div
+                                className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-xs"
+                                style={{ backgroundColor: memberColor }}
+                              >
+                                {m.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-sm font-semibold text-slate-900 dark:text-white leading-none">
+                                    {m}
+                                  </p>
+                                  {splitMode === 'custom' && isSelected && (
+                                    manuallyEditedMembers.includes(m) ? (
+                                      <span className="text-[9px] font-bold text-indigo-600 dark:indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded">
+                                        Manual
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
+                                        Auto-Pending
+                                      </span>
+                                    )
                                   )}
                                 </div>
-                                <div className="relative flex items-center w-32">
-                                  <span className="absolute left-2.5 text-xs font-bold font-mono text-slate-400 pointer-events-none">
+                                {m === expenseData.paidBy && (
+                                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                    Payer
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Equal Mode Amount Preview */}
+                            {splitMode === 'equal' && isSelected && expenseData.totalAmount && (
+                              <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
+                                {formatRawCurrency(Number(expenseData.totalAmount) / splitAmong.length, currency)}
+                              </span>
+                            )}
+
+                            {/* Custom Mode Exact Amount Input & Live Pending on Tab */}
+                            {splitMode === 'custom' && isSelected && (
+                              <div className="flex flex-col items-end gap-1">
+                                <div className="relative flex items-center w-36">
+                                  <span className="absolute left-3 text-xs font-bold font-mono text-slate-400 pointer-events-none">
                                     {CURRENCY_MAP[currency]?.symbol || '$'}
                                   </span>
                                   <input
                                     type="number"
                                     step="0.01"
                                     min="0"
-                                    value={customPayerAmounts[m] ?? ''}
-                                    onChange={(e) => handleCustomPayerAmountChange(m, e.target.value)}
+                                    value={customAmounts[m] ?? ''}
+                                    onChange={(e) => handleCustomAmountChange(m, e.target.value)}
                                     placeholder="0.00"
-                                    className="w-full pl-7 pr-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right"
+                                    className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right"
                                   />
                                 </div>
                               </div>
-                            ))}
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2 pt-1">
-                            {isUnder && (
-                              <button
-                                type="button"
-                                onClick={handleDistributeRemainingPayer}
-                                className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 text-[11px] font-bold border border-indigo-200 dark:border-indigo-800 transition-colors flex items-center gap-1"
-                              >
-                                <Zap className="w-3 h-3" /> Auto-Fill Remainder to Payer
-                              </button>
                             )}
-                            <button
-                              type="button"
-                              onClick={handleEqualizePayers}
-                              className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 text-[11px] font-semibold transition-colors flex items-center gap-1"
-                            >
-                              <RotateCcw className="w-3 h-3" /> Equalize Payments
-                            </button>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
 
-              {/* Split Strategy & Custom Tabs Selector */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Split Strategy
-                  </label>
-                  <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchSplitMode('equal')}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                        splitMode === 'equal'
-                          ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <Equal className="w-3.5 h-3.5" />
-                      <span>Equal</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchSplitMode('custom')}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                        splitMode === 'custom'
-                          ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <SlidersHorizontal className="w-3.5 h-3.5" />
-                      <span>Custom Tabs</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchSplitMode('percentages')}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                        splitMode === 'percentages'
-                          ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <Percent className="w-3.5 h-3.5" />
-                      <span>% Pct</span>
-                    </button>
+                            {/* Percentage Mode Input */}
+                            {splitMode === 'percentages' && isSelected && (
+                              <div className="flex items-center gap-2">
+                                <div className="relative flex items-center w-24">
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    min="0"
+                                    max="100"
+                                    value={customPercentages[m] ?? ''}
+                                    onChange={(e) => handleCustomPercentageChange(m, e.target.value)}
+                                    placeholder="0"
+                                    className="w-full pr-6 pl-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right"
+                                  />
+                                  <span className="absolute right-2.5 text-xs font-bold text-slate-400 pointer-events-none">
+                                    %
+                                  </span>
+                                </div>
+                                {expenseData.totalAmount && (
+                                  <span className="font-mono text-[11px] font-bold text-slate-500 min-w-[50px] text-right">
+                                    {formatRawCurrency((Number(expenseData.totalAmount) * (Number(customPercentages[m]) || 0)) / 100, currency)}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
-                {/* Allocation Balance Banner (for Custom mode) */}
-                {splitMode === 'custom' && (
-                  <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-2">
-                    {(() => {
-                      const total = Number(expenseData.totalAmount) || 0;
-                      const sumCustom = splitAmong.reduce((acc, m) => acc + (Number(customAmounts[m]) || 0), 0);
-                      const diff = Math.round((total - sumCustom) * 100) / 100;
-                      const isMatch = Math.abs(diff) < 0.01 && total > 0;
-                      const isUnder = diff > 0.01;
-                      const isOver = diff < -0.01;
-
-                      return (
-                        <>
-                          <div className="flex items-center justify-between text-xs font-bold">
-                            <span className="text-slate-600 dark:text-slate-400">
-                              Allocated: <span className="font-mono text-slate-900 dark:text-white">{formatRawCurrency(sumCustom, currency)}</span> of {formatRawCurrency(total, currency)}
-                            </span>
-                            {isMatch && (
-                              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
-                                <CheckCircle2 className="w-3.5 h-3.5" /> 100% Balanced
-                              </span>
-                            )}
-                            {isUnder && (
-                              <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold">
-                                <AlertCircle className="w-3.5 h-3.5" /> {formatRawCurrency(diff, currency)} unassigned
-                              </span>
-                            )}
-                            {isOver && (
-                              <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-bold">
-                                <AlertCircle className="w-3.5 h-3.5" /> Over by {formatRawCurrency(Math.abs(diff), currency)}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2 pt-1">
-                            {isUnder && (
-                              <button
-                                type="button"
-                                onClick={handleDistributeRemaining}
-                                className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 text-[11px] font-bold border border-indigo-200 dark:border-indigo-800 transition-colors flex items-center gap-1"
-                              >
-                                <Zap className="w-3 h-3" /> Auto-Distribute Remainder
-                              </button>
-                            )}
-                            {Math.abs(diff) > 0.01 && sumCustom > 0 && (
-                              <button
-                                type="button"
-                                onClick={handleSyncTotalWithCustomSum}
-                                className="px-2.5 py-1 rounded-lg bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 text-[11px] font-bold transition-colors"
-                              >
-                                Update Total to {formatRawCurrency(sumCustom, currency)}
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={handleEqualizeCustom}
-                              className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 text-[11px] font-semibold transition-colors flex items-center gap-1"
-                            >
-                              <RotateCcw className="w-3 h-3" /> Equalize
-                            </button>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                {splitMode === 'percentages' && (
-                  <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
-                    {(() => {
-                      const totalPct = splitAmong.reduce((acc, m) => acc + (Number(customPercentages[m]) || 0), 0);
-                      const is100 = Math.abs(totalPct - 100) < 0.1;
-
-                      return (
-                        <div className="flex items-center justify-between text-xs font-bold">
-                          <span className="text-slate-600 dark:text-slate-400">
-                            Total Percentage Assigned: <span className="font-mono text-slate-900 dark:text-white">{totalPct.toFixed(1)}%</span>
-                          </span>
-                          {is100 ? (
-                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
-                              <CheckCircle2 className="w-3.5 h-3.5" /> 100% Assigned
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-bold">
-                              <AlertCircle className="w-3.5 h-3.5" /> {(100 - totalPct).toFixed(1)}% remaining
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                {/* Member Allocation List */}
-                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {activeGroupData.members.map((m, idx) => {
-                    const isSelected = splitAmong.includes(m);
-                    const memberColor = MEMBER_COLORS[idx % MEMBER_COLORS.length];
-
-                    return (
-                      <div
-                        key={m}
-                        className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all ${
-                          isSelected
-                            ? 'bg-white/80 dark:bg-slate-800/90 border-indigo-200 dark:border-indigo-900/60 shadow-xs'
-                            : 'bg-slate-50/50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-800 opacity-60'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleSplitMember(m)}
-                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
-                          />
-                          <div
-                            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-xs"
-                            style={{ backgroundColor: memberColor }}
-                          >
-                            {m.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-sm font-semibold text-slate-900 dark:text-white leading-none">
-                                {m}
-                              </p>
-                              {splitMode === 'custom' && isSelected && (
-                                manuallyEditedMembers.includes(m) ? (
-                                  <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded">
-                                    Manual
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
-                                    Auto-Pending
-                                  </span>
-                                )
-                              )}
-                            </div>
-                            {m === expenseData.paidBy && (
-                              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                                Payer
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Equal Mode Amount Preview */}
-                        {splitMode === 'equal' && isSelected && expenseData.totalAmount && (
-                          <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
-                            {formatRawCurrency(Number(expenseData.totalAmount) / splitAmong.length, currency)}
-                          </span>
-                        )}
-
-                        {/* Custom Mode Exact Amount Input & Live Pending on Tab */}
-                        {splitMode === 'custom' && isSelected && (
-                          <div className="flex flex-col items-end gap-1">
-                            <div className="relative flex items-center w-36">
-                              <span className="absolute left-3 text-xs font-bold font-mono text-slate-400 pointer-events-none">
-                                {CURRENCY_MAP[currency]?.symbol || '$'}
-                              </span>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={customAmounts[m] ?? ''}
-                                onChange={(e) => handleCustomAmountChange(m, e.target.value)}
-                                placeholder="0.00"
-                                className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right"
-                              />
-                            </div>
-                            {(() => {
-                              const mShare = Number(customAmounts[m]) || 0;
-                              const mPaid =
-                                payerMode === 'single'
-                                  ? m === expenseData.paidBy
-                                    ? Number(expenseData.totalAmount) || 0
-                                    : 0
-                                  : Number(customPayerAmounts[m]) || 0;
-                              const mPending = mShare - mPaid;
-
-                              if (mPaid > 0 || mShare > 0) {
-                                if (mPending > 0.001) {
-                                  return (
-                                    <span className="text-[10px] font-mono font-bold text-rose-500">
-                                      Pending: {formatRawCurrency(mPending, currency)}
-                                    </span>
-                                  );
-                                }
-                                if (mPending < -0.001) {
-                                  return (
-                                    <span className="text-[10px] font-mono font-bold text-emerald-500">
-                                      Advance: +{formatRawCurrency(Math.abs(mPending), currency)}
-                                    </span>
-                                  );
-                                }
-                                return (
-                                  <span className="text-[10px] font-mono font-bold text-emerald-500">
-                                    ✓ Paid in Full
-                                  </span>
-                                );
-                              }
-                              return null;
-                            })()}
-                          </div>
-                        )}
-
-                        {/* Percentage Mode Input */}
-                        {splitMode === 'percentages' && isSelected && (
-                          <div className="flex items-center gap-2">
-                            <div className="relative flex items-center w-24">
-                              <input
-                                type="number"
-                                step="0.1"
-                                min="0"
-                                max="100"
-                                value={customPercentages[m] ?? ''}
-                                onChange={(e) => handleCustomPercentageChange(m, e.target.value)}
-                                placeholder="0"
-                                className="w-full pr-6 pl-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right"
-                              />
-                              <span className="absolute right-2.5 text-xs font-bold text-slate-400 pointer-events-none">
-                                %
-                              </span>
-                            </div>
-                            {expenseData.totalAmount && (
-                              <span className="font-mono text-[11px] font-bold text-slate-500 min-w-[50px] text-right">
-                                {formatRawCurrency((Number(expenseData.totalAmount) * (Number(customPercentages[m]) || 0)) / 100, currency)}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="p-4 sm:p-5 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md flex gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowExpenseForm(false);
+                      setActiveGroup(null);
+                      setEditingExpense(null);
+                    }}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={splitAmong.length === 0}
+                    className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {editingExpense ? 'Update Bill & Split' : 'Add Bill'}
+                  </button>
                 </div>
-              </div>
-              </div>
-
-              <div className="p-4 sm:p-5 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md flex gap-3 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowExpenseForm(false);
-                    setActiveGroup(null);
-                    setEditingExpense(null);
-                  }}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={splitAmong.length === 0}
-                  className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
-                >
-                  {editingExpense ? 'Update Bill & Split' : 'Add Bill'}
-                </button>
-              </div>
-            </form>
+              </form>
+            )}
           </div>
         </div>
       )}
