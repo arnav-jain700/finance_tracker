@@ -328,10 +328,12 @@ export const fromBaseCurrency = (amount: number, toCurrency = 'USD'): number => 
 export const formatRawCurrency = (amount: number, currencyCode = 'USD'): string => {
   const meta = CURRENCY_MAP[currencyCode] || CURRENCY_MAP.USD;
   const isNegative = amount < 0;
-  const decimals = currencyCode === 'JPY' ? 0 : 2;
-  const absFormatted = Math.abs(amount).toLocaleString('en-US', {
+  const rounded = Math.round(Math.abs(amount) * 100) / 100;
+  const hasDecimals = Math.abs(rounded - Math.round(rounded)) >= 0.005 && currencyCode !== 'JPY';
+  const decimals = currencyCode === 'JPY' ? 0 : hasDecimals ? 2 : 0;
+  const absFormatted = rounded.toLocaleString('en-US', {
     minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    maximumFractionDigits: currencyCode === 'JPY' ? 0 : 2,
   });
   return `${isNegative ? '-' : ''}${meta.symbol}${absFormatted}`;
 };
@@ -344,10 +346,12 @@ export const formatCurrency = (
   const converted = convertCurrency(amount, currencyCode, fromCurrency);
   const meta = CURRENCY_MAP[currencyCode] || CURRENCY_MAP.USD;
   const isNegative = converted < 0;
-  const decimals = currencyCode === 'JPY' ? 0 : 2;
-  const absFormatted = Math.abs(converted).toLocaleString('en-US', {
+  const rounded = Math.round(Math.abs(converted) * 100) / 100;
+  const hasDecimals = Math.abs(rounded - Math.round(rounded)) >= 0.005 && currencyCode !== 'JPY';
+  const decimals = currencyCode === 'JPY' ? 0 : hasDecimals ? 2 : 0;
+  const absFormatted = rounded.toLocaleString('en-US', {
     minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    maximumFractionDigits: currencyCode === 'JPY' ? 0 : 2,
   });
   return `${isNegative ? '-' : ''}${meta.symbol}${absFormatted}`;
 };

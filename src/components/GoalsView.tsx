@@ -367,138 +367,140 @@ export function GoalsView({
 
       {/* Goal Add / Edit Modal */}
       {showGoalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-7 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+            <div className="p-5 sm:p-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <h3 className="text-xl font-bold font-heading text-slate-900 dark:text-white">
                 {editingGoal ? 'Edit Savings Target' : 'Create Savings Target'}
               </h3>
               <button
                 onClick={() => setShowGoalModal(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveGoal} className="space-y-4 pt-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                  Goal Name
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g., Japan Vacation, Emergency Fund"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3.5">
+            <form onSubmit={handleSaveGoal} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                    Target Goal Amount
-                  </label>
-                  <div className="relative flex items-center">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold font-mono text-slate-400 dark:text-slate-500 pointer-events-none select-none">
-                      {CURRENCY_MAP[currency]?.symbol || '$'}
-                    </span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={targetAmount}
-                      onChange={(e) => setTargetAmount(e.target.value)}
-                      placeholder="5000"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                    Current Saved
-                  </label>
-                  <div className="relative flex items-center">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold font-mono text-slate-400 dark:text-slate-500 pointer-events-none select-none">
-                      {CURRENCY_MAP[currency]?.symbol || '$'}
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={currentAmount}
-                      onChange={(e) => setCurrentAmount(e.target.value)}
-                      placeholder="0"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                    Target Date
+                    Goal Name
                   </label>
                   <input
-                    type="date"
-                    value={targetDate}
-                    onChange={(e) => setTargetDate(e.target.value)}
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g., Japan Vacation, Emergency Fund"
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     required
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                      Target Goal Amount
+                    </label>
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold font-mono text-slate-400 dark:text-slate-500 pointer-events-none select-none">
+                        {CURRENCY_MAP[currency]?.symbol || '$'}
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={targetAmount}
+                        onChange={(e) => setTargetAmount(e.target.value)}
+                        placeholder="5000"
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                      Current Saved
+                    </label>
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold font-mono text-slate-400 dark:text-slate-500 pointer-events-none select-none">
+                        {CURRENCY_MAP[currency]?.symbol || '$'}
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={currentAmount}
+                        onChange={(e) => setCurrentAmount(e.target.value)}
+                        placeholder="0"
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                      Target Date
+                    </label>
+                    <input
+                      type="date"
+                      value={targetDate}
+                      onChange={(e) => setTargetDate(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                      Category Tag
+                    </label>
+                    <input
+                      type="text"
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      placeholder="e.g. Travel, Safety"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                    Category Tag
+                    Accent Color
                   </label>
-                  <input
-                    type="text"
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    placeholder="e.g. Travel, Safety"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                  <div className="flex gap-2">
+                    {GOAL_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setColor(c)}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                          color === c ? 'ring-2 ring-offset-2 ring-indigo-500 scale-110' : 'opacity-80'
+                        }`}
+                        style={{ backgroundColor: c }}
+                      >
+                        {color === c && <CheckCircle2 className="w-4 h-4 text-white" />}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                  Accent Color
-                </label>
-                <div className="flex gap-2">
-                  {GOAL_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setColor(c)}
-                      className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                        color === c ? 'ring-2 ring-offset-2 ring-indigo-500 scale-110' : 'opacity-80'
-                      }`}
-                      style={{ backgroundColor: c }}
-                    >
-                      {color === c && <CheckCircle2 className="w-4 h-4 text-white" />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <div className="p-4 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowGoalModal(false)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50"
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 active:scale-95 transition-all"
+                  className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 active:scale-95 transition-all cursor-pointer"
                 >
                   {editingGoal ? 'Update Goal' : 'Save Goal'}
                 </button>
@@ -510,58 +512,60 @@ export function GoalsView({
 
       {/* Deposit / Withdraw Modal */}
       {showDepositModal && activeGoalForDeposit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-sm p-6 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-sm max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+            <div className="p-5 sm:p-6 pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <h3 className="text-lg font-bold font-heading text-slate-900 dark:text-white">
                 {isDepositAction ? 'Deposit to Goal' : 'Withdraw from Goal'}
               </h3>
               <button
                 onClick={() => setShowDepositModal(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleExecuteDeposit} className="space-y-4 pt-4">
-              <p className="text-xs text-slate-500">
-                Target: <strong className="text-slate-800 dark:text-slate-200">{activeGoalForDeposit.name}</strong> (Currently {formatCurrency(activeGoalForDeposit.currentAmount, currency)})
-              </p>
+            <form onSubmit={handleExecuteDeposit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                <p className="text-xs text-slate-500">
+                  Target: <strong className="text-slate-800 dark:text-slate-200">{activeGoalForDeposit.name}</strong> (Currently {formatCurrency(activeGoalForDeposit.currentAmount, currency)})
+                </p>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                  Amount
-                </label>
-                <div className="relative flex items-center">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold font-mono text-slate-400 dark:text-slate-500 pointer-events-none select-none">
-                    {CURRENCY_MAP[currency]?.symbol || '$'}
-                  </span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
-                    placeholder="250"
-                    autoFocus
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-base font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  />
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                    Amount
+                  </label>
+                  <div className="relative flex items-center">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold font-mono text-slate-400 dark:text-slate-500 pointer-events-none select-none">
+                      {CURRENCY_MAP[currency]?.symbol || '$'}
+                    </span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(e.target.value)}
+                      placeholder="250"
+                      autoFocus
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-base font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      required
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-3">
+              <div className="p-4 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowDepositModal(false)}
-                  className="flex-1 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold"
+                  className="flex-1 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className={`flex-1 px-4 py-2 text-white rounded-xl text-xs font-bold shadow-sm ${
+                  className={`flex-1 px-4 py-2 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer ${
                     isDepositAction ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'
                   }`}
                 >

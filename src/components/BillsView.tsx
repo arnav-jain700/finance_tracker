@@ -57,6 +57,15 @@ interface BillsViewProps {
 
 const MEMBER_COLORS = ['#6366f1', '#06b6d4', '#f97316', '#10b981', '#ec4899', '#8b5cf6', '#eab308'];
 
+const formatNumForInput = (num: number): string => {
+  if (isNaN(num)) return '';
+  const rounded = Math.round(num * 100) / 100;
+  if (Math.abs(rounded - Math.round(rounded)) < 0.0001) {
+    return Math.round(rounded).toString();
+  }
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
+};
+
 export function BillsView({
   billGroups,
   currency,
@@ -166,7 +175,7 @@ export function BillsView({
     const totalRaw = fromBaseCurrency(exp.totalAmount, currency);
     setExpenseData({
       description: exp.description,
-      totalAmount: totalRaw.toFixed(2),
+      totalAmount: formatNumForInput(totalRaw),
       paidBy: exp.paidBy.replace(' (Multi-payer)', ''),
       date: exp.date,
     });
@@ -178,7 +187,7 @@ export function BillsView({
       const payerMap: Record<string, string> = {};
       group.members.forEach((m) => {
         const found = exp.members.find((item) => item.name === m);
-        payerMap[m] = found ? fromBaseCurrency(found.paidAmount, currency).toFixed(2) : '0.00';
+        payerMap[m] = found ? formatNumForInput(fromBaseCurrency(found.paidAmount, currency)) : '0';
       });
       setCustomPayerAmounts(payerMap);
     } else {
@@ -206,7 +215,7 @@ export function BillsView({
       const amountMap: Record<string, string> = {};
       group.members.forEach((m) => {
         const found = exp.members.find((item) => item.name === m);
-        amountMap[m] = found ? fromBaseCurrency(found.shareAmount, currency).toFixed(2) : '0.00';
+        amountMap[m] = found ? formatNumForInput(fromBaseCurrency(found.shareAmount, currency)) : '0';
       });
       setCustomAmounts(amountMap);
       setManuallyEditedMembers(membersWithShare.map((m) => m.name));
@@ -231,7 +240,7 @@ export function BillsView({
       from: fromDebtor,
       to: toCreditor,
       totalOwedBase: amountBase,
-      amountGivenInput: rawAmt.toFixed(2),
+      amountGivenInput: formatNumForInput(rawAmt),
     });
   };
 
@@ -295,7 +304,7 @@ export function BillsView({
       if (currentSum === 0 && total > 0) {
         const next: Record<string, string> = {};
         activeGroupData.members.forEach((m) => {
-          next[m] = m === expenseData.paidBy ? total.toFixed(2) : '0.00';
+          next[m] = m === expenseData.paidBy ? formatNumForInput(total) : '0';
         });
         setCustomPayerAmounts(next);
         setManuallyEditedPayers([expenseData.paidBy || activeGroupData.members[0] || '']);
@@ -324,11 +333,11 @@ export function BillsView({
       unedited.forEach((m, idx) => {
         if (idx === unedited.length - 1) {
           const finalShare = Math.max(0, Math.round((remaining - assigned) * 100) / 100);
-          nextPayers[m] = finalShare.toFixed(2);
+          nextPayers[m] = formatNumForInput(finalShare);
         } else {
           const share = Math.max(0, Math.round((remaining / unedited.length) * 100) / 100);
           assigned += share;
-          nextPayers[m] = share.toFixed(2);
+          nextPayers[m] = formatNumForInput(share);
         }
       });
     }
@@ -347,7 +356,7 @@ export function BillsView({
     const target = unedited[0] || expenseData.paidBy || activeGroupData.members[0];
     setCustomPayerAmounts((prev) => ({
       ...prev,
-      [target]: Math.max(0, (Number(prev[target]) || 0) + remaining).toFixed(2),
+      [target]: formatNumForInput(Math.max(0, (Number(prev[target]) || 0) + remaining)),
     }));
   };
 
@@ -355,7 +364,7 @@ export function BillsView({
     if (!activeGroupData) return;
     const total = Number(expenseData.totalAmount) || 0;
     if (total <= 0) return;
-    const perPerson = (total / activeGroupData.members.length).toFixed(2);
+    const perPerson = formatNumForInput(total / activeGroupData.members.length);
     const next: Record<string, string> = {};
     activeGroupData.members.forEach((m) => (next[m] = perPerson));
     setCustomPayerAmounts(next);
@@ -370,7 +379,7 @@ export function BillsView({
     if (mode === 'custom') {
       const currentSum = splitAmong.reduce((acc, m) => acc + (Number(customAmounts[m]) || 0), 0);
       if (currentSum === 0 && total > 0) {
-        const perPerson = (total / splitAmong.length).toFixed(2);
+        const perPerson = formatNumForInput(total / splitAmong.length);
         const next: Record<string, string> = {};
         splitAmong.forEach((m) => (next[m] = perPerson));
         setCustomAmounts(next);
@@ -379,7 +388,7 @@ export function BillsView({
     } else if (mode === 'percentages') {
       const currentSum = splitAmong.reduce((acc, m) => acc + (Number(customPercentages[m]) || 0), 0);
       if (currentSum === 0) {
-        const perPersonPct = (100 / splitAmong.length).toFixed(1);
+        const perPersonPct = (100 / splitAmong.length).toFixed(1).replace(/\.0$/, '');
         const next: Record<string, string> = {};
         splitAmong.forEach((m) => (next[m] = perPersonPct));
         setCustomPercentages(next);
@@ -388,8 +397,6 @@ export function BillsView({
   };
 
   // Smart Auto-Balancer for Custom Splitting Tabs:
-  // When a user enters/edits a custom amount for person A, the pending remaining
-  // amount is automatically assigned to whoever's tab has not been edited manually!
   const handleCustomAmountChange = (member: string, value: string) => {
     const updatedEdited = Array.from(new Set([...manuallyEditedMembers, member]));
     setManuallyEditedMembers(updatedEdited);
@@ -413,11 +420,11 @@ export function BillsView({
       unedited.forEach((m, idx) => {
         if (idx === unedited.length - 1) {
           const finalShare = Math.max(0, Math.round((remaining - assigned) * 100) / 100);
-          nextCustom[m] = finalShare.toFixed(2);
+          nextCustom[m] = formatNumForInput(finalShare);
         } else {
           const share = Math.max(0, Math.round((remaining / unedited.length) * 100) / 100);
           assigned += share;
-          nextCustom[m] = share.toFixed(2);
+          nextCustom[m] = formatNumForInput(share);
         }
       });
     }
@@ -446,11 +453,11 @@ export function BillsView({
         unedited.forEach((m, idx) => {
           if (idx === unedited.length - 1) {
             const finalShare = Math.max(0, Math.round((remaining - assigned) * 100) / 100);
-            nextCustom[m] = finalShare.toFixed(2);
+            nextCustom[m] = formatNumForInput(finalShare);
           } else {
             const share = Math.max(0, Math.round((remaining / unedited.length) * 100) / 100);
             assigned += share;
-            nextCustom[m] = share.toFixed(2);
+            nextCustom[m] = formatNumForInput(share);
           }
         });
         setCustomAmounts(nextCustom);
@@ -470,11 +477,11 @@ export function BillsView({
         unedited.forEach((m, idx) => {
           if (idx === unedited.length - 1) {
             const finalShare = Math.max(0, Math.round((remaining - assigned) * 100) / 100);
-            nextPayers[m] = finalShare.toFixed(2);
+            nextPayers[m] = formatNumForInput(finalShare);
           } else {
             const share = Math.max(0, Math.round((remaining / unedited.length) * 100) / 100);
             assigned += share;
-            nextPayers[m] = share.toFixed(2);
+            nextPayers[m] = formatNumForInput(share);
           }
         });
         setCustomPayerAmounts(nextPayers);
@@ -498,20 +505,20 @@ export function BillsView({
     const next: Record<string, string> = { ...customAmounts };
     targetMembers.forEach((m) => {
       const current = Number(next[m]) || 0;
-      next[m] = Math.max(0, current + perMemberAdd).toFixed(2);
+      next[m] = formatNumForInput(Math.max(0, current + perMemberAdd));
     });
     setCustomAmounts(next);
   };
 
   const handleSyncTotalWithCustomSum = () => {
     const currentSum = splitAmong.reduce((acc, m) => acc + (Number(customAmounts[m]) || 0), 0);
-    setExpenseData((prev) => ({ ...prev, totalAmount: currentSum.toFixed(2) }));
+    setExpenseData((prev) => ({ ...prev, totalAmount: formatNumForInput(currentSum) }));
   };
 
   const handleEqualizeCustom = () => {
     const total = Number(expenseData.totalAmount) || 0;
     if (splitAmong.length === 0 || total <= 0) return;
-    const perPerson = (total / splitAmong.length).toFixed(2);
+    const perPerson = formatNumForInput(total / splitAmong.length);
     const next: Record<string, string> = {};
     splitAmong.forEach((m) => (next[m] = perPerson));
     setCustomAmounts(next);
@@ -1211,9 +1218,9 @@ export function BillsView({
 
       {/* New Group Modal */}
       {showGroupForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-7 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+            <div className="p-5 sm:p-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <h3 className="text-xl font-bold font-heading text-slate-900 dark:text-white">
                 Create Bill Split Group
               </h3>
@@ -1225,81 +1232,83 @@ export function BillsView({
               </button>
             </div>
 
-            <form onSubmit={handleCreateGroup} className="space-y-4 pt-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                  Group Name
-                </label>
-                <input
-                  type="text"
-                  value={groupName}
-                  onChange={(e) => setGroupName(e.target.value)}
-                  placeholder="e.g., Lake Tahoe Cabin Trip, Apt 4B"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                  Add Members
-                </label>
-                <div className="flex gap-2">
+            <form onSubmit={handleCreateGroup} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                    Group Name
+                  </label>
                   <input
                     type="text"
-                    value={memberInput}
-                    onChange={(e) => setMemberInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddMember();
-                      }
-                    }}
-                    placeholder="Member name (press Enter)"
-                    className="flex-1 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={groupName}
+                    onChange={(e) => setGroupName(e.target.value)}
+                    placeholder="e.g., Lake Tahoe Cabin Trip, Apt 4B"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
                   />
-                  <button
-                    type="button"
-                    onClick={handleAddMember}
-                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 text-xs font-semibold"
-                  >
-                    Add
-                  </button>
                 </div>
 
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {members.map((m) => (
-                    <span
-                      key={m}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/50 rounded-full text-xs font-semibold"
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                    Add Members
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={memberInput}
+                      onChange={(e) => setMemberInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddMember();
+                        }
+                      }}
+                      placeholder="Member name (press Enter)"
+                      className="flex-1 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddMember}
+                      className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 text-xs font-semibold cursor-pointer"
                     >
-                      {m}
-                      {m !== 'You' && (
-                        <button
-                          type="button"
-                          onClick={() => setMembers(members.filter((x) => x !== m))}
-                          className="text-indigo-400 hover:text-indigo-600"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
-                    </span>
-                  ))}
+                      Add
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {members.map((m) => (
+                      <span
+                        key={m}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/50 rounded-full text-xs font-semibold"
+                      >
+                        {m}
+                        {m !== 'You' && (
+                          <button
+                            type="button"
+                            onClick={() => setMembers(members.filter((x) => x !== m))}
+                            className="text-indigo-400 hover:text-indigo-600 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <div className="p-4 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowGroupForm(false)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50"
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={members.length === 0}
-                  className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 active:scale-95 transition-all disabled:opacity-50"
+                  className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                 >
                   Create Group
                 </button>
@@ -1311,9 +1320,9 @@ export function BillsView({
 
       {/* Add Shared Expense Modal */}
       {showExpenseForm && activeGroupData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-lg p-6 sm:p-7 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+            <div className="p-5 sm:p-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <div>
                 <h3 className="text-xl font-bold font-heading text-slate-900 dark:text-white">
                   {editingExpense ? 'Edit Bill & Payer Breakdown' : `Add Bill to ${activeGroupData.name}`}
@@ -1330,26 +1339,27 @@ export function BillsView({
                   setActiveGroup(null);
                   setEditingExpense(null);
                 }}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddExpense} className="space-y-4 pt-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                  Description
-                </label>
-                <input
-                  type="text"
-                  value={expenseData.description}
-                  onChange={(e) => setExpenseData({ ...expenseData, description: e.target.value })}
-                  placeholder="e.g., Airbnb Cabin Booking, Dinner & Wine"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                />
-              </div>
+            <form onSubmit={handleAddExpense} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                    Description
+                  </label>
+                  <input
+                    type="text"
+                    value={expenseData.description}
+                    onChange={(e) => setExpenseData({ ...expenseData, description: e.target.value })}
+                    placeholder="e.g., Airbnb Cabin Booking, Dinner & Wine"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
 
               <div className="grid grid-cols-2 gap-3.5">
                 <div>
@@ -1811,8 +1821,9 @@ export function BillsView({
                   })}
                 </div>
               </div>
+              </div>
 
-              <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <div className="p-4 sm:p-5 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md flex gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -1820,14 +1831,14 @@ export function BillsView({
                     setActiveGroup(null);
                     setEditingExpense(null);
                   }}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50"
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={splitAmong.length === 0}
-                  className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 active:scale-95 transition-all disabled:opacity-50"
+                  className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-indigo-500/20 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                 >
                   {editingExpense ? 'Update Bill & Split' : 'Add Bill'}
                 </button>
@@ -1839,9 +1850,9 @@ export function BillsView({
 
       {/* Record Payment / Partial Settlement Modal */}
       {settleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-7 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="glass-panel-glow rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+            <div className="p-5 sm:p-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-200 dark:border-emerald-800">
                   <HandCoins className="w-5 h-5" />
@@ -1857,128 +1868,130 @@ export function BillsView({
               </div>
               <button
                 onClick={() => setSettleModal(null)}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleConfirmSettlement} className="space-y-4 pt-4">
-              <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 flex items-center justify-between">
+            <form onSubmit={handleConfirmSettlement} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">Payer</span>
+                    <span className="text-sm font-bold text-slate-900 dark:text-white">{settleModal.from}</span>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-indigo-400" />
+                  <div className="text-right">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">Receiver</span>
+                    <span className="text-sm font-bold text-slate-900 dark:text-white">{settleModal.to}</span>
+                  </div>
+                </div>
+
                 <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">Payer</span>
-                  <span className="text-sm font-bold text-slate-900 dark:text-white">{settleModal.from}</span>
-                </div>
-                <ArrowRight className="w-4 h-4 text-indigo-400" />
-                <div className="text-right">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">Receiver</span>
-                  <span className="text-sm font-bold text-slate-900 dark:text-white">{settleModal.to}</span>
-                </div>
-              </div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                    How Much Money Was Given?
+                  </label>
+                  <div className="relative flex items-center">
+                    <span className="absolute left-3.5 text-sm font-bold font-mono text-slate-400 pointer-events-none select-none">
+                      {CURRENCY_MAP[currency]?.symbol || '$'}
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={settleModal.amountGivenInput}
+                      onChange={(e) =>
+                        setSettleModal({ ...settleModal, amountGivenInput: e.target.value })
+                      }
+                      placeholder="0"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      required
+                      autoFocus
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
-                  How Much Money Was Given?
-                </label>
-                <div className="relative flex items-center">
-                  <span className="absolute left-3.5 text-sm font-bold font-mono text-slate-400 pointer-events-none select-none">
-                    {CURRENCY_MAP[currency]?.symbol || '$'}
-                  </span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={settleModal.amountGivenInput}
-                    onChange={(e) =>
-                      setSettleModal({ ...settleModal, amountGivenInput: e.target.value })
-                    }
-                    placeholder="0.00"
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/90 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    required
-                    autoFocus
-                  />
+                  {/* Quick amount shortcuts */}
+                  {(() => {
+                    const maxRaw = fromBaseCurrency(settleModal.totalOwedBase, currency);
+                    return (
+                      <div className="flex items-center gap-1.5 pt-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSettleModal({ ...settleModal, amountGivenInput: formatNumForInput(maxRaw) })
+                          }
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-colors cursor-pointer"
+                        >
+                          Full ({formatRawCurrency(maxRaw, currency)})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSettleModal({
+                              ...settleModal,
+                              amountGivenInput: formatNumForInput(maxRaw / 2),
+                            })
+                          }
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-colors cursor-pointer"
+                        >
+                          Half ({formatRawCurrency(maxRaw / 2, currency)})
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                {/* Quick amount shortcuts */}
+                {/* Dynamic Live Pending Balance Card */}
                 {(() => {
                   const maxRaw = fromBaseCurrency(settleModal.totalOwedBase, currency);
+                  const givenRaw = Number(settleModal.amountGivenInput) || 0;
+                  const pendingRaw = Math.max(0, Math.round((maxRaw - givenRaw) * 100) / 100);
+                  const isFullyCleared = givenRaw >= maxRaw;
+
                   return (
-                    <div className="flex items-center gap-1.5 pt-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSettleModal({ ...settleModal, amountGivenInput: maxRaw.toFixed(2) })
-                        }
-                        className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-colors"
-                      >
-                        Full ({formatRawCurrency(maxRaw, currency)})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSettleModal({
-                            ...settleModal,
-                            amountGivenInput: (maxRaw / 2).toFixed(2),
-                          })
-                        }
-                        className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-colors"
-                      >
-                        Half ({formatRawCurrency(maxRaw / 2, currency)})
-                      </button>
+                    <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-500 dark:text-slate-400 font-medium">
+                        <span>Total Amount Owed:</span>
+                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                          {formatRawCurrency(maxRaw, currency)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-slate-500 dark:text-slate-400 font-medium">
+                        <span>Money Given Now:</span>
+                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                          - {formatRawCurrency(givenRaw, currency)}
+                        </span>
+                      </div>
+                      <div className="border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between font-bold">
+                        <span className="text-slate-700 dark:text-slate-300">Remaining Pending Debt:</span>
+                        <span
+                          className={`font-mono ${
+                            isFullyCleared
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          {isFullyCleared ? '✓ 100% Cleared' : formatRawCurrency(pendingRaw, currency)}
+                        </span>
+                      </div>
                     </div>
                   );
                 })()}
               </div>
 
-              {/* Dynamic Live Pending Balance Card */}
-              {(() => {
-                const maxRaw = fromBaseCurrency(settleModal.totalOwedBase, currency);
-                const givenRaw = Number(settleModal.amountGivenInput) || 0;
-                const pendingRaw = Math.max(0, Math.round((maxRaw - givenRaw) * 100) / 100);
-                const isFullyCleared = givenRaw >= maxRaw;
-
-                return (
-                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
-                    <div className="flex justify-between text-slate-500 dark:text-slate-400 font-medium">
-                      <span>Total Amount Owed:</span>
-                      <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                        {formatRawCurrency(maxRaw, currency)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-slate-500 dark:text-slate-400 font-medium">
-                      <span>Money Given Now:</span>
-                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                        - {formatRawCurrency(givenRaw, currency)}
-                      </span>
-                    </div>
-                    <div className="border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between font-bold">
-                      <span className="text-slate-700 dark:text-slate-300">Remaining Pending Debt:</span>
-                      <span
-                        className={`font-mono ${
-                          isFullyCleared
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-rose-600 dark:text-rose-400'
-                        }`}
-                      >
-                        {isFullyCleared ? '✓ 100% Cleared' : formatRawCurrency(pendingRaw, currency)}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="flex gap-3 pt-2">
+              <div className="p-4 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 flex gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setSettleModal(null)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50"
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!Number(settleModal.amountGivenInput)}
-                  className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Check className="w-4 h-4" />
                   <span>Confirm Payment</span>

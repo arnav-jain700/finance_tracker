@@ -59,10 +59,19 @@ export function BudgetsView({
     setLimit('');
   };
 
+const formatNumForInput = (num: number): string => {
+  if (isNaN(num)) return '';
+  const rounded = Math.round(num * 100) / 100;
+  if (Math.abs(rounded - Math.round(rounded)) < 0.0001) {
+    return Math.round(rounded).toString();
+  }
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
+};
+
   const handleEdit = (b: Budget) => {
     setEditingBudget(b);
     setCategory(b.category as any);
-    setLimit(String(Math.round(fromBaseCurrency(b.limit, currency))));
+    setLimit(formatNumForInput(fromBaseCurrency(b.limit, currency)));
   };
 
   const handleCancel = () => {
