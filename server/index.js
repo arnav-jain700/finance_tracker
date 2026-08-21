@@ -204,13 +204,9 @@ app.post('/api/users/:userId/reset', (req, res) => {
 app.get('/api/users/:userId/data', (req, res) => {
   try {
     const { userId } = req.params;
-    const user = getUserById(userId);
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found' });
-    }
-
+    let user = getUserById(userId);
     const data = getUserData(userId);
-    res.json({ success: true, data: data || null });
+    res.json({ success: true, data: data || null, user: user || null });
   } catch (error) {
     console.error('Error fetching user data:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch user data' });
@@ -221,13 +217,8 @@ app.get('/api/users/:userId/data', (req, res) => {
 app.get('/api/users/:userId/data/meta', (req, res) => {
   try {
     const { userId } = req.params;
-    const user = getUserById(userId);
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found' });
-    }
-
     const meta = getUserDataMeta(userId);
-    res.json({ success: true, meta: meta || { version: 1, updatedAt: new Date().toISOString() } });
+    res.json({ success: true, meta: meta || { version: 0, updatedAt: new Date().toISOString() } });
   } catch (error) {
     console.error('Error fetching user data meta:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch user data meta' });
@@ -238,11 +229,6 @@ app.get('/api/users/:userId/data/meta', (req, res) => {
 app.post('/api/users/:userId/data', (req, res) => {
   try {
     const { userId } = req.params;
-    const user = getUserById(userId);
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found' });
-    }
-
     const savedData = saveUserData(userId, req.body);
     res.json({ success: true, data: savedData });
   } catch (error) {

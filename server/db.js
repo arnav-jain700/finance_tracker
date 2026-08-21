@@ -35,50 +35,92 @@ export function getUsers() {
 
 export function getUserById(userId) {
   const users = getUsers();
-  return users.find((u) => u.id === userId) || null;
+  const found = users.find((u) => u.id === userId);
+  if (found) return found;
+
+  // Auto-recover user profile if data file exists on disk
+  const filePath = getUserDataFilePath(userId);
+  if (fs.existsSync(filePath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      const recoveredUser = {
+        id: userId,
+        name: data?.userProfile?.name || 'Primary User',
+        email: data?.userProfile?.email || `${userId}@apexfinance.io`,
+        avatar: data?.userProfile?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(userId)}`,
+        currency: data?.userProfile?.currency || 'USD',
+        role: data?.userProfile?.role || 'Personal',
+        color: data?.userProfile?.color || '#6366f1',
+        createdAt: new Date().toISOString().split('T')[0],
+      };
+      users.push(recoveredUser);
+      fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+      return recoveredUser;
+    } catch {
+      // fallback
+    }
+  }
+  return null;
 }
 
-export function createUser(userData) {
+export function upsertUser(userData) {
   const users = getUsers();
-  const newUser = {
-    id: `user-${Date.now()}`,
-    name: userData.name.trim(),
-    email: userData.email?.trim() || `${userData.name.toLowerCase().replace(/\s+/g, '')}@apexfinance.io`,
-    avatar: userData.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(userData.name)}`,
+  const userId = userData.id || `user-${Date.now()}`;
+  const existingIdx = users.findIndex((u) => u.id === userId);
+
+  const cleanUser = {
+    id: userId,
+    name: (userData.name || 'User').trim(),
+    email: userData.email?.trim() || `${(userData.name || 'user').toLowerCase().replace(/\s+/g, '')}@apexfinance.io`,
+    avatar: userData.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(userData.name || userId)}`,
     currency: userData.currency || 'USD',
     role: userData.role || 'Personal',
     color: userData.color || '#6366f1',
     pin: userData.pin || undefined,
-    createdAt: new Date().toISOString().split('T')[0],
+    createdAt: userData.createdAt || new Date().toISOString().split('T')[0],
   };
 
-  users.push(newUser);
+  if (existingIdx !== -1) {
+    users[existingIdx] = { ...users[existingIdx], ...cleanUser };
+  } else {
+    users.push(cleanUser);
+  }
+
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
 
-  // Initialize clean data file for new user with zero sample transactions/budgets/goals
-  const initialUserData = {
-    transactions: [],
-    budgets: [],
-    billGroups: [],
-    accounts: [
-      {
-        id: `acc-${Date.now()}-1`,
-        name: `${userData.name}'s Primary Account`,
-        type: 'checking',
-        balance: Number(userData.initialBalance) || 0,
-        currency: userData.currency || 'USD',
-        institution: 'Main Wallet',
-        accountNumber: '•••• ' + Math.floor(1000 + Math.random() * 9000),
-        color: 'from-blue-600 to-indigo-700',
-        isDefault: true,
-      },
-    ],
-    goals: [],
-    subscriptions: [],
-  };
+  // If no data file exists for this user, create initial data
+  const filePath = getUserDataFilePath(userId);
+  if (!fs.existsSync(filePath)) {
+    const initialUserData = {
+      transactions: [],
+      budgets: [],
+      billGroups: [],
+      accounts: [
+        {
+          id: `acc-${Date.now()}-1`,
+          name: `${cleanUser.name}'s Primary Account`,
+          type: 'checking',
+          balance: Number(userData.initialBalance) || 0,
+          currency: cleanUser.currency || 'USD',
+          institution: 'Main Wallet',
+          accountNumber: '•••• ' + Math.floor(1000 + Math.random() * 9000),
+          color: 'from-blue-600 to-indigo-700',
+          isDefault: true,
+        },
+      ],
+      goals: [],
+      subscriptions: [],
+      version: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    saveUserData(userId, initialUserData);
+  }
 
-  saveUserData(newUser.id, initialUserData);
-  return newUser;
+  return cleanUser;
+}
+
+export function createUser(userData) {
+  return upsertUser(userData);
 }
 
 export function findOrCreateGoogleUser(googleData) {
@@ -239,6 +281,15 @@ export function getUserDataMeta(userId) {
 }
 
 export function saveUserData(userId, data) {
+  let user = getUserById(userId);
+  if (!user) {
+    user = upsertUser({
+      id: userId,
+      name: data?.userProfile?.name || 'Primary User',
+      currency: data?.userProfile?.currency || 'USD',
+    });
+  }
+
   const filePath = getUserDataFilePath(userId);
   if (data && typeof data === 'object') {
     const existing = getUserData(userId);

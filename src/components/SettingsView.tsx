@@ -18,52 +18,81 @@ import {
 } from 'lucide-react';
 import { UserProfile } from '../api/client';
 import {
+  Transaction,
+  Budget,
+  BillGroup,
+  Account,
+  Goal,
+  Subscription,
   CURRENCY_MAP,
   formatCurrency,
 } from '../store';
 import { Smartphone, ArrowRightLeft, QrCode } from 'lucide-react';
+import { soundFx } from '../utils/audio';
 
 interface SettingsViewProps {
   currency: string;
   theme: 'light' | 'dark' | 'system';
   currentUser?: UserProfile | null;
+  transactions?: Transaction[];
+  budgets?: Budget[];
+  billGroups?: BillGroup[];
+  accounts?: Account[];
+  goals?: Goal[];
+  subscriptions?: Subscription[];
   onOpenManageProfiles?: () => void;
   onOpenDeviceSync?: () => void;
   onCurrencyChange: (c: string) => void;
   onThemeChange: (t: 'light' | 'dark' | 'system') => void;
   onResetData: () => void;
   onLoadDemoData?: () => void;
+  onImportData?: (data: any) => boolean;
 }
 
 export function SettingsView({
   currency,
   theme,
   currentUser,
+  transactions = [],
+  budgets = [],
+  billGroups = [],
+  accounts = [],
+  goals = [],
+  subscriptions = [],
   onOpenManageProfiles,
   onOpenDeviceSync,
   onCurrencyChange,
   onThemeChange,
   onResetData,
   onLoadDemoData,
+  onImportData,
 }: SettingsViewProps) {
   const [notifications, setNotifications] = useState(true);
-  const [saveToast, setSaveToast] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const handleExport = () => {
-    const data = {
-      transactions: JSON.parse(localStorage.getItem('transactions') || '[]'),
-      budgets: JSON.parse(localStorage.getItem('budgets') || '[]'),
-      billGroups: JSON.parse(localStorage.getItem('billGroups') || '[]'),
-      settings: { theme, currency, notifications },
+    const backupData = {
+      version: '2.0',
       exportedAt: new Date().toISOString(),
+      userProfile: currentUser || { name: 'User', currency },
+      transactions,
+      budgets,
+      billGroups,
+      accounts,
+      goals,
+      subscriptions,
+      settings: { theme, currency, notifications },
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `apex-finance-backup-${new Date().toISOString().split('T')[0]}.json`;
+    const safeName = (currentUser?.name || 'finance').toLowerCase().replace(/\s+/g, '-');
+    a.download = `apex-finance-${safeName}-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    soundFx.playSuccess();
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -72,20 +101,48 @@ export function SettingsView({
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const data = JSON.parse(event.target?.result as string);
-        if (data.transactions) localStorage.setItem('transactions', JSON.stringify(data.transactions));
-        if (data.budgets) localStorage.setItem('budgets', JSON.stringify(data.budgets));
-        if (data.billGroups) localStorage.setItem('billGroups', JSON.stringify(data.billGroups));
-        if (data.settings) {
-          if (data.settings.theme) onThemeChange(data.settings.theme);
-          if (data.settings.currency) onCurrencyChange(data.settings.currency);
+        const raw = event.target?.result as string;
+        const parsed = JSON.parse(raw);
+
+        if (onImportData) {
+          const success = onImportData(parsed);
+          if (success) {
+            const txCount = parsed.transactions?.length || parsed.userData?.transactions?.length || 0;
+            const bgtCount = parsed.budgets?.length || parsed.userData?.budgets?.length || 0;
+            setImportStatus(`Successfully restored ${txCount} transactions and ${bgtCount} budgets!`);
+            setTimeout(() => setImportStatus(null), 5000);
+            return;
+          }
         }
-        window.location.reload();
+
+        // Direct local storage fallback
+        if (currentUser) {
+          const payload = {
+            transactions: parsed.transactions || [],
+            budgets: parsed.budgets || [],
+            billGroups: parsed.billGroups || [],
+            accounts: parsed.accounts || [],
+            goals: parsed.goals || [],
+            subscriptions: parsed.subscriptions || [],
+            version: Date.now(),
+            updatedAt: new Date().toISOString(),
+          };
+          localStorage.setItem(`user_data_${currentUser.id}`, JSON.stringify(payload));
+        }
+
+        if (parsed.settings) {
+          if (parsed.settings.theme) onThemeChange(parsed.settings.theme);
+          if (parsed.settings.currency) onCurrencyChange(parsed.settings.currency);
+        }
+
+        setImportStatus('Backup loaded successfully!');
+        setTimeout(() => setImportStatus(null), 5000);
       } catch {
-        alert('Invalid or corrupt backup JSON file.');
+        alert('Invalid JSON file format. Please choose a valid ApexFinance backup JSON.');
       }
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
   return (
@@ -282,10 +339,17 @@ export function SettingsView({
             </div>
           </div>
 
+          {importStatus && (
+            <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{importStatus}</span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
             <button
               onClick={handleExport}
-              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all text-left flex items-start gap-3.5 group"
+              className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all text-left flex items-start gap-3.5 group cursor-pointer"
             >
               <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform">
                 <Download className="w-4 h-4" />

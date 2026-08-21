@@ -14,6 +14,7 @@ import {
   setExchangeRates,
 } from './store';
 import { apiClient, UserProfile, UserDataPayload } from './api/client';
+import { soundFx } from './utils/audio';
 
 type ViewMode =
   | 'dashboard'
@@ -113,6 +114,15 @@ function App() {
         console.error(e);
       }
 
+      // If server is online, push all local users to backend so they're registered
+      if (serverOk && localUsers.length > 0) {
+        try {
+          await Promise.all(localUsers.map((u) => apiClient.upsertUser(u)));
+        } catch (e) {
+          console.warn('Failed syncing local users to backend:', e);
+        }
+      }
+
       let mergedUsers = [...localUsers];
       if (serverOk) {
         const remoteUsers = await apiClient.getUsers();
@@ -130,9 +140,6 @@ function App() {
         }
       }
 
-      setUsers(mergedUsers);
-      localStorage.setItem('users_list', JSON.stringify(mergedUsers));
-
       // Check if URL has ?syncUser= query for phone pairing
       const syncUserParam =
         typeof window !== 'undefined'
@@ -143,16 +150,35 @@ function App() {
       if (syncUserParam) {
         active = mergedUsers.find((u) => u.id === syncUserParam) || null;
         if (!active && serverOk) {
-          const remoteUsers = await apiClient.getUsers();
-          active = remoteUsers.find((u) => u.id === syncUserParam) || null;
+          try {
+            const userWithData = await apiClient.getUserWithData(syncUserParam);
+            if (userWithData && userWithData.user) {
+              const matchedUser = userWithData.user;
+              active = matchedUser;
+              mergedUsers = [...mergedUsers.filter((u) => u.id !== matchedUser.id), matchedUser];
+            } else {
+              const remoteUsers = await apiClient.getUsers();
+              const foundRemote = remoteUsers.find((u) => u.id === syncUserParam) || null;
+              if (foundRemote) {
+                active = foundRemote;
+                mergedUsers = [...mergedUsers.filter((u) => u.id !== foundRemote.id), foundRemote];
+              }
+            }
+          } catch (e) {
+            console.warn('Error pairing user via syncUserParam:', e);
+          }
         }
         if (active && typeof window !== 'undefined') {
           localStorage.setItem('active_user_id', active.id);
           const url = new URL(window.location.href);
           url.searchParams.delete('syncUser');
           window.history.replaceState({}, '', url.pathname);
+          soundFx.playCelebration();
         }
       }
+
+      setUsers(mergedUsers);
+      localStorage.setItem('users_list', JSON.stringify(mergedUsers));
 
       if (!active) {
         const savedUserId = localStorage.getItem('active_user_id');
@@ -181,7 +207,7 @@ function App() {
 
     initApp();
 
-    // Heartbeat check for server every 15 seconds & fetch rates periodically
+    // Heartbeat check for server every 10 seconds & fetch rates periodically
     const interval = setInterval(async () => {
       const ok = await apiClient.checkHealth();
       setIsServerOnline(ok);
@@ -190,7 +216,7 @@ function App() {
         setExchangeRates(rates);
         setExchangeRatesState({ ...rates });
       }
-    }, 15000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, []);
@@ -227,8 +253,8 @@ function App() {
       }
     };
 
-    // Polling every 4 seconds for continuous sync between phone and laptop
-    const pollInterval = setInterval(checkCrossDeviceSync, 4000);
+    // Polling every 3.5 seconds for continuous real-time sync
+    const pollInterval = setInterval(checkCrossDeviceSync, 3500);
 
     // Instant sync when switching to tab or unlocking mobile screen
     const handleVisibility = () => {
@@ -305,17 +331,38 @@ function App() {
       setSubscriptions(finalPayload.subscriptions || []);
       localStorage.setItem(`user_data_${userId}`, JSON.stringify(finalPayload));
     } else {
-      // Default initial data for fresh user
-      const data = initStorage();
-      setTransactions(data.transactions);
-      setBudgets(data.budgets);
-      setBillGroups(data.billGroups);
-      setAccounts(data.accounts);
-      setGoals(data.goals);
-      setSubscriptions(data.subscriptions);
-      localStorage.setItem(`user_data_${userId}`, JSON.stringify(data));
+      // Clean initial state for fresh profile without dummy data overwrite
+      const emptyPayload: UserDataPayload = {
+        transactions: [],
+        budgets: [],
+        billGroups: [],
+        accounts: [
+          {
+            id: `acc-${Date.now()}-1`,
+            name: `Primary Wallet`,
+            type: 'checking',
+            balance: 0,
+            currency: currency || 'USD',
+            institution: 'Main Wallet',
+            accountNumber: '•••• ' + Math.floor(1000 + Math.random() * 9000),
+            color: 'from-blue-600 to-indigo-700',
+            isDefault: true,
+          },
+        ],
+        goals: [],
+        subscriptions: [],
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      setTransactions(emptyPayload.transactions);
+      setBudgets(emptyPayload.budgets);
+      setBillGroups(emptyPayload.billGroups);
+      setAccounts(emptyPayload.accounts);
+      setGoals(emptyPayload.goals);
+      setSubscriptions(emptyPayload.subscriptions);
+      localStorage.setItem(`user_data_${userId}`, JSON.stringify(emptyPayload));
       if (online) {
-        apiClient.syncUserData(userId, data);
+        apiClient.syncUserData(userId, emptyPayload);
       }
     }
 
@@ -691,6 +738,91 @@ function App() {
     setTransactions((prev) => [newTx, ...prev]);
   };
 
+  const handleImportData = (importedData: any): boolean => {
+    if (!importedData || typeof importedData !== 'object') return false;
+
+    const targetUserId = currentUser?.id || 'user_1';
+
+    let txs: Transaction[] = [];
+    let bgts: Budget[] = [];
+    let groups: BillGroup[] = [];
+    let accs: Account[] = [];
+    let gls: Goal[] = [];
+    let subs: Subscription[] = [];
+
+    // Support single profile format
+    if (Array.isArray(importedData.transactions)) txs = importedData.transactions;
+    if (Array.isArray(importedData.budgets)) bgts = importedData.budgets;
+    if (Array.isArray(importedData.billGroups)) groups = importedData.billGroups;
+    if (Array.isArray(importedData.accounts)) accs = importedData.accounts;
+    if (Array.isArray(importedData.goals)) gls = importedData.goals;
+    if (Array.isArray(importedData.subscriptions)) subs = importedData.subscriptions;
+
+    // Support nested userData format
+    if (importedData.userData && typeof importedData.userData === 'object') {
+      if (Array.isArray(importedData.userData.transactions)) txs = importedData.userData.transactions;
+      if (Array.isArray(importedData.userData.budgets)) bgts = importedData.userData.budgets;
+      if (Array.isArray(importedData.userData.billGroups)) groups = importedData.userData.billGroups;
+      if (Array.isArray(importedData.userData.accounts)) accs = importedData.userData.accounts;
+      if (Array.isArray(importedData.userData.goals)) gls = importedData.userData.goals;
+      if (Array.isArray(importedData.userData.subscriptions)) subs = importedData.userData.subscriptions;
+    }
+
+    if (importedData.settings) {
+      if (importedData.settings.theme) setTheme(importedData.settings.theme);
+      if (importedData.settings.currency) setCurrency(importedData.settings.currency);
+    }
+
+    setTransactions(txs);
+    setBudgets(bgts);
+    setBillGroups(groups);
+    setAccounts(accs);
+    setGoals(gls);
+    setSubscriptions(subs);
+
+    const nextVer = (dataVersionRef.current || 0) + 1;
+    dataVersionRef.current = nextVer;
+
+    const payload: UserDataPayload = {
+      transactions: txs,
+      budgets: bgts,
+      billGroups: groups,
+      accounts: accs,
+      goals: gls,
+      subscriptions: subs,
+      version: nextVer,
+      updatedAt: new Date().toISOString(),
+    };
+
+    localStorage.setItem(`user_data_${targetUserId}`, JSON.stringify(payload));
+    if (isServerOnline) {
+      apiClient.syncUserData(targetUserId, payload);
+    }
+
+    soundFx.playCelebration();
+    return true;
+  };
+
+  const handleForceSync = async () => {
+    if (!currentUser) return;
+    const payload: UserDataPayload = {
+      transactions,
+      budgets,
+      billGroups,
+      accounts,
+      goals,
+      subscriptions,
+      version: (dataVersionRef.current || 0) + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    dataVersionRef.current = payload.version || 1;
+    localStorage.setItem(`user_data_${currentUser.id}`, JSON.stringify(payload));
+    if (isServerOnline) {
+      await apiClient.syncUserData(currentUser.id, payload);
+      soundFx.playSuccess();
+    }
+  };
+
   const resetData = () => {
     setTransactions([]);
     setBudgets([]);
@@ -806,6 +938,7 @@ function App() {
         onLockWorkspace={() => setIsLocked(true)}
         onResetData={resetData}
         onLoadDemoData={loadDemoData}
+        onImportData={handleImportData}
       />
       <LockScreen
         isLocked={isLocked}
@@ -821,6 +954,14 @@ function App() {
           onClose={() => setShowDeviceSyncModal(false)}
           currentUser={currentUser}
           isServerOnline={isServerOnline}
+          transactions={transactions}
+          budgets={budgets}
+          billGroups={billGroups}
+          accounts={accounts}
+          goals={goals}
+          subscriptions={subscriptions}
+          onImportData={handleImportData}
+          onForceSync={handleForceSync}
         />
       )}
     </>

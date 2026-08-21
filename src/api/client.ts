@@ -104,6 +104,7 @@ export const apiClient = {
   },
 
   async createUser(payload: {
+    id?: string;
     name: string;
     email?: string;
     avatar?: string;
@@ -123,6 +124,21 @@ export const apiClient = {
       return data.success ? data.user : null;
     } catch (e) {
       console.error('Failed to create user on backend:', e);
+      return null;
+    }
+  },
+
+  async upsertUser(payload: Partial<UserProfile> & { id: string; name: string }): Promise<UserProfile | null> {
+    try {
+      const res = await fetch(`${API_BASE}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      return data.success ? data.user : null;
+    } catch (e) {
+      console.error('Failed to upsert user on backend:', e);
       return null;
     }
   },
@@ -179,6 +195,20 @@ export const apiClient = {
     } catch (e) {
       console.warn(`Failed to fetch data for user ${userId}:`, e);
       return null;
+    }
+  },
+
+  async getUserWithData(userId: string): Promise<{ data: UserDataPayload | null; user: UserProfile | null }> {
+    try {
+      const res = await fetch(`${API_BASE}/users/${userId}/data`);
+      const data = await res.json();
+      return {
+        data: data.success && data.data ? data.data : null,
+        user: data.user || null,
+      };
+    } catch (e) {
+      console.warn(`Failed to fetch user with data for user ${userId}:`, e);
+      return { data: null, user: null };
     }
   },
 

@@ -125,6 +125,7 @@ interface LayoutProps {
   onLockWorkspace: () => void;
   onResetData: () => void;
   onLoadDemoData: () => void;
+  onImportData?: (data: any) => boolean;
   onOpenSharedPortal?: (groupId: string) => void;
   onOpenDeviceSync?: () => void;
 }
@@ -177,6 +178,7 @@ export function Layout({
   onLockWorkspace,
   onResetData,
   onLoadDemoData,
+  onImportData,
   onOpenSharedPortal,
   onOpenDeviceSync,
 }: LayoutProps) {
@@ -663,12 +665,19 @@ export function Layout({
               currency={currency}
               theme={theme}
               currentUser={currentUser}
+              transactions={transactions}
+              budgets={budgets}
+              billGroups={billGroups}
+              accounts={accounts}
+              goals={goals}
+              subscriptions={subscriptions}
               onOpenManageProfiles={() => setShowUserModal(true)}
               onOpenDeviceSync={onOpenDeviceSync}
               onCurrencyChange={onCurrencyChange}
               onThemeChange={onThemeChange}
               onResetData={onResetData}
               onLoadDemoData={onLoadDemoData}
+              onImportData={onImportData}
             />
           )}
         </main>
