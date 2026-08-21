@@ -12,6 +12,7 @@ import {
   deleteUser,
   resetUserData,
   getUserData,
+  getUserDataMeta,
   saveUserData,
   findOrCreateGoogleUser,
   INITIAL_USERS,
@@ -213,6 +214,23 @@ app.get('/api/users/:userId/data', (req, res) => {
   } catch (error) {
     console.error('Error fetching user data:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch user data' });
+  }
+});
+
+// Lightweight cross-device polling endpoint for real-time mobile <-> laptop sync
+app.get('/api/users/:userId/data/meta', (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const meta = getUserDataMeta(userId);
+    res.json({ success: true, meta: meta || { version: 1, updatedAt: new Date().toISOString() } });
+  } catch (error) {
+    console.error('Error fetching user data meta:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch user data meta' });
   }
 });
 

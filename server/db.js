@@ -221,8 +221,32 @@ export function getUserData(userId) {
   }
 }
 
+export function getUserDataMeta(userId) {
+  const data = getUserData(userId);
+  if (!data) return null;
+  return {
+    version: data.version || 1,
+    updatedAt: data.updatedAt || new Date().toISOString(),
+    counts: {
+      transactions: Array.isArray(data.transactions) ? data.transactions.length : 0,
+      budgets: Array.isArray(data.budgets) ? data.budgets.length : 0,
+      billGroups: Array.isArray(data.billGroups) ? data.billGroups.length : 0,
+      accounts: Array.isArray(data.accounts) ? data.accounts.length : 0,
+      goals: Array.isArray(data.goals) ? data.goals.length : 0,
+      subscriptions: Array.isArray(data.subscriptions) ? data.subscriptions.length : 0,
+    },
+  };
+}
+
 export function saveUserData(userId, data) {
   const filePath = getUserDataFilePath(userId);
+  if (data && typeof data === 'object') {
+    const existing = getUserData(userId);
+    const prevVersion = existing?.version || 0;
+    data.version = typeof data.version === 'number' && data.version > prevVersion ? data.version : prevVersion + 1;
+    data.updatedAt = new Date().toISOString();
+  }
+
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
 
   // Index bill groups into shared registry for real-time live member access

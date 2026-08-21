@@ -16,3 +16,4 @@ export { LockScreen } from './LockScreen';
 export { CsvImportModal } from './CsvImportModal';
 export { CategoryIcon, CategoryBadge } from './CategoryIcon';
 export { SharedBillPortal } from './SharedBillPortal';
+export { DeviceSyncModal } from './DeviceSyncModal';

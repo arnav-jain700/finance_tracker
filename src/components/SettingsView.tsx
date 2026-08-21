@@ -21,12 +21,14 @@ import {
   CURRENCY_MAP,
   formatCurrency,
 } from '../store';
+import { Smartphone, ArrowRightLeft, QrCode } from 'lucide-react';
 
 interface SettingsViewProps {
   currency: string;
   theme: 'light' | 'dark' | 'system';
   currentUser?: UserProfile | null;
   onOpenManageProfiles?: () => void;
+  onOpenDeviceSync?: () => void;
   onCurrencyChange: (c: string) => void;
   onThemeChange: (t: 'light' | 'dark' | 'system') => void;
   onResetData: () => void;
@@ -38,6 +40,7 @@ export function SettingsView({
   theme,
   currentUser,
   onOpenManageProfiles,
+  onOpenDeviceSync,
   onCurrencyChange,
   onThemeChange,
   onResetData,
@@ -130,14 +133,27 @@ export function SettingsView({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={onOpenManageProfiles}
-                className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/20 active:scale-95 transition-all flex items-center gap-1.5"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Manage Profiles & PIN</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {onOpenDeviceSync && (
+                  <button
+                    type="button"
+                    onClick={onOpenDeviceSync}
+                    className="px-3.5 py-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Sync Phone & Laptop</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={onOpenManageProfiles}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Manage Profiles</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

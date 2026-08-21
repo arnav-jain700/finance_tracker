@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Layout, LockScreen, SharedBillPortal } from './components';
+import { Layout, LockScreen, SharedBillPortal, DeviceSyncModal } from './components';
 import { OnboardingWelcome } from './components/OnboardingWelcome';
 import {
   initStorage,
@@ -68,6 +68,13 @@ function App() {
   const [isServerOnline, setIsServerOnline] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
 
+  const [showDeviceSyncModal, setShowDeviceSyncModal] = useState(false);
+  const dataVersionRef = useRef<number>(1);
+  const currentUserRef = useRef<UserProfile | null>(currentUser);
+  currentUserRef.current = currentUser;
+  const isServerOnlineRef = useRef<boolean>(isServerOnline);
+  isServerOnlineRef.current = isServerOnline;
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [billGroups, setBillGroups] = useState<BillGroup[]>([]);
@@ -81,7 +88,7 @@ function App() {
   const [initialized, setInitialized] = useState(false);
   const isSyncingRef = useRef(false);
 
-  // Health check, Exchange Rates & Users initialization
+  // Health check, Exchange Rates, Device Sync QR & Users initialization
   useEffect(() => {
     async function initApp() {
       // 1. Fetch live Forex exchange rates
@@ -126,9 +133,32 @@ function App() {
       setUsers(mergedUsers);
       localStorage.setItem('users_list', JSON.stringify(mergedUsers));
 
-      // Check saved active user
-      const savedUserId = localStorage.getItem('active_user_id');
-      const active = mergedUsers.find((u) => u.id === savedUserId) || mergedUsers[0] || null;
+      // Check if URL has ?syncUser= query for phone pairing
+      const syncUserParam =
+        typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('syncUser')
+          : null;
+
+      let active: UserProfile | null = null;
+      if (syncUserParam) {
+        active = mergedUsers.find((u) => u.id === syncUserParam) || null;
+        if (!active && serverOk) {
+          const remoteUsers = await apiClient.getUsers();
+          active = remoteUsers.find((u) => u.id === syncUserParam) || null;
+        }
+        if (active && typeof window !== 'undefined') {
+          localStorage.setItem('active_user_id', active.id);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('syncUser');
+          window.history.replaceState({}, '', url.pathname);
+        }
+      }
+
+      if (!active) {
+        const savedUserId = localStorage.getItem('active_user_id');
+        active = mergedUsers.find((u) => u.id === savedUserId) || mergedUsers[0] || null;
+      }
+
       setCurrentUser(active);
       if (active) {
         setCurrency(active.currency || 'USD');
@@ -165,6 +195,58 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Real-Time Cross-Device Background Polling & Window Focus Sync (Laptop <-> Mobile)
+  useEffect(() => {
+    if (!initialized) return;
+
+    const checkCrossDeviceSync = async () => {
+      const user = currentUserRef.current;
+      if (!user || !isServerOnlineRef.current || isSyncingRef.current) return;
+
+      try {
+        const meta = await apiClient.getUserDataMeta(user.id);
+        if (meta && typeof meta.version === 'number' && meta.version > dataVersionRef.current) {
+          dataVersionRef.current = meta.version;
+          const latest = await apiClient.fetchUserData(user.id);
+          if (latest) {
+            isSyncingRef.current = true;
+            setTransactions(latest.transactions || []);
+            setBudgets(latest.budgets || []);
+            setBillGroups(latest.billGroups || []);
+            setAccounts(latest.accounts || []);
+            setGoals(latest.goals || []);
+            setSubscriptions(latest.subscriptions || []);
+            localStorage.setItem(`user_data_${user.id}`, JSON.stringify(latest));
+            setTimeout(() => {
+              isSyncingRef.current = false;
+            }, 250);
+          }
+        }
+      } catch (e) {
+        console.warn('Cross-device background sync error:', e);
+      }
+    };
+
+    // Polling every 4 seconds for continuous sync between phone and laptop
+    const pollInterval = setInterval(checkCrossDeviceSync, 4000);
+
+    // Instant sync when switching to tab or unlocking mobile screen
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkCrossDeviceSync();
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', checkCrossDeviceSync);
+
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', checkCrossDeviceSync);
+    };
+  }, [initialized]);
+
   // Load data for specific user with resilient offline-first merging
   const loadUserData = async (userId: string, online = isServerOnline) => {
     isSyncingRef.current = true;
@@ -195,9 +277,9 @@ function App() {
         const hasLocalData =
           localPayload &&
           ((localPayload.transactions && localPayload.transactions.length > 0) ||
-           (localPayload.billGroups && localPayload.billGroups.length > 0) ||
-           (localPayload.budgets && localPayload.budgets.length > 0) ||
-           (localPayload.accounts && localPayload.accounts.length > 0));
+            (localPayload.billGroups && localPayload.billGroups.length > 0) ||
+            (localPayload.budgets && localPayload.budgets.length > 0) ||
+            (localPayload.accounts && localPayload.accounts.length > 0));
 
         if (hasRemoteData) {
           finalPayload = remotePayload;
@@ -212,6 +294,9 @@ function App() {
     }
 
     if (finalPayload) {
+      if (typeof finalPayload.version === 'number') {
+        dataVersionRef.current = finalPayload.version;
+      }
       setTransactions(finalPayload.transactions || []);
       setBudgets(finalPayload.budgets || []);
       setBillGroups(finalPayload.billGroups || []);
@@ -662,6 +747,8 @@ function App() {
     return (
       <OnboardingWelcome
         onCreateUser={handleCreateUser}
+        existingUsers={users}
+        onSelectExistingUser={handleSelectUser}
         isServerOnline={isServerOnline}
       />
     );
@@ -715,6 +802,7 @@ function App() {
         onDeleteSubscription={deleteSubscription}
         onSubscriptionPayment={logSubscriptionPayment}
         onOpenSharedPortal={(gid) => setSharedGroupId(gid)}
+        onOpenDeviceSync={() => setShowDeviceSyncModal(true)}
         onLockWorkspace={() => setIsLocked(true)}
         onResetData={resetData}
         onLoadDemoData={loadDemoData}
@@ -727,6 +815,14 @@ function App() {
           setIsLocked(false);
         }}
       />
+      {currentUser && (
+        <DeviceSyncModal
+          isOpen={showDeviceSyncModal}
+          onClose={() => setShowDeviceSyncModal(false)}
+          currentUser={currentUser}
+          isServerOnline={isServerOnline}
+        />
+      )}
     </>
   );
 }

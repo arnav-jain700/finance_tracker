@@ -31,6 +31,8 @@ export interface UserDataPayload {
   accounts: Account[];
   goals: Goal[];
   subscriptions: Subscription[];
+  version?: number;
+  updatedAt?: string;
 }
 
 export interface SharedSettlement {
@@ -176,6 +178,21 @@ export const apiClient = {
       return data.success && data.data ? data.data : null;
     } catch (e) {
       console.warn(`Failed to fetch data for user ${userId}:`, e);
+      return null;
+    }
+  },
+
+  async getUserDataMeta(userId: string): Promise<{ version: number; updatedAt: string; counts?: any } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/users/${userId}/data/meta`, {
+        signal: AbortSignal.timeout(3500),
+      });
+      const result = await res.json();
+      if (result.success && result.meta) {
+        return result.meta;
+      }
+      return null;
+    } catch {
       return null;
     }
   },

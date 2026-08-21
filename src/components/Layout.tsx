@@ -49,6 +49,7 @@ import {
   Lock,
   Volume2,
   VolumeX,
+  Smartphone,
 } from 'lucide-react';
 import { useState } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
@@ -125,6 +126,7 @@ interface LayoutProps {
   onResetData: () => void;
   onLoadDemoData: () => void;
   onOpenSharedPortal?: (groupId: string) => void;
+  onOpenDeviceSync?: () => void;
 }
 
 export function Layout({
@@ -176,6 +178,7 @@ export function Layout({
   onResetData,
   onLoadDemoData,
   onOpenSharedPortal,
+  onOpenDeviceSync,
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showGlobalAddModal, setShowGlobalAddModal] = useState(false);
@@ -508,13 +511,24 @@ export function Layout({
               )}
             </div>
 
+            {/* Device Sync Button */}
+            {onOpenDeviceSync && (
+              <button
+                onClick={onOpenDeviceSync}
+                className="p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all shadow-xs cursor-pointer"
+                title="Sync Mobile & Laptop Devices via QR Code"
+              >
+                <Smartphone className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              </button>
+            )}
+
             {/* Audio Feedback Toggle */}
             <button
               onClick={() => {
                 const muted = soundFx.toggleMute();
                 setIsAudioMuted(muted);
               }}
-              className="p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all shadow-xs"
+              className="p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all shadow-xs cursor-pointer"
               title={isAudioMuted ? 'Unmute UI audio effects' : 'Mute UI audio effects'}
             >
               {isAudioMuted ? <VolumeX className="w-4 h-4 text-slate-400" /> : <Volume2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
@@ -523,7 +537,7 @@ export function Layout({
             {/* Lock Workspace Button */}
             <button
               onClick={onLockWorkspace}
-              className="p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all shadow-xs"
+              className="p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all shadow-xs cursor-pointer"
               title="Lock confidential workspace session"
             >
               <Lock className="w-4 h-4" />
@@ -650,6 +664,7 @@ export function Layout({
               theme={theme}
               currentUser={currentUser}
               onOpenManageProfiles={() => setShowUserModal(true)}
+              onOpenDeviceSync={onOpenDeviceSync}
               onCurrencyChange={onCurrencyChange}
               onThemeChange={onThemeChange}
               onResetData={onResetData}
@@ -684,6 +699,7 @@ export function Layout({
         onUpdateUser={onUpdateUser}
         onDeleteUser={onDeleteUser}
         onResetUserData={onResetUserData}
+        onOpenDeviceSync={onOpenDeviceSync}
         isServerOnline={isServerOnline}
       />
     </div>

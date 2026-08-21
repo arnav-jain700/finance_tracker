@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Mail,
   UserCheck,
+  Smartphone,
 } from 'lucide-react';
 
 interface UserSwitcherModalProps {
@@ -38,6 +39,7 @@ interface UserSwitcherModalProps {
   onUpdateUser?: (userId: string, data: Partial<Omit<UserProfile, 'id'>>) => Promise<void>;
   onDeleteUser?: (userId: string) => Promise<void>;
   onResetUserData?: (userId: string) => Promise<void>;
+  onOpenDeviceSync?: () => void;
   isServerOnline: boolean;
 }
 
@@ -53,6 +55,7 @@ export function UserSwitcherModal({
   onUpdateUser,
   onDeleteUser,
   onResetUserData,
+  onOpenDeviceSync,
   isServerOnline,
 }: UserSwitcherModalProps) {
   const [mode, setMode] = useState<'list' | 'create' | 'edit'>('list');
@@ -299,13 +302,28 @@ export function UserSwitcherModal({
               })}
             </div>
 
-            <button
-              onClick={startCreate}
-              className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-500/50 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>Create New User Profile</span>
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+              <button
+                onClick={startCreate}
+                className="py-3 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-500/50 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Create New Profile</span>
+              </button>
+
+              {onOpenDeviceSync && (
+                <button
+                  onClick={() => {
+                    onClose();
+                    onOpenDeviceSync();
+                  }}
+                  className="py-3 rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Smartphone className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Sync Mobile & Laptop</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
 
